@@ -1,0 +1,8 @@
+/target/
+/build/
+/vendor/aria2-next/bin/
+/apple/.build/
+/apple/.swiftpm/
+/apple/Frameworks/
+/apple/Sources/OpenDMCore/opendm_core.swift
+.DS_Store
