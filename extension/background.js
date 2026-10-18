@@ -595,8 +595,17 @@ const hasCodec = (codec) => Boolean(codec) && codec !== "none";
 /** Adds yt-dlp's playlists and files to the tab's finds. */
 function addSiteVideo(tabId, video) {
   const title = video.title || "";
+  // What yt-dlp knows about each picture size: exact file sizes (a stream's
+  // playlist only states peak bitrates) and frame rates.
+  const known = {};
+  for (const f of video.files) {
+    if (!hasCodec(f.vcodec) || hasCodec(f.acodec) || !f.width) continue;
+    known[f.width + "x" + f.height + "|" + codecName(f.vcodec, "video")] = { size: f.size ?? 0, fps: f.fps ?? 0 };
+  }
+  const audioSize = Math.max(0, ...video.files.filter((f) => !hasCodec(f.vcodec) && f.ext === "m4a").map((f) => f.size ?? 0));
   for (const stream of video.streams) {
-    addMedia(tabId, { url: stream.url, kind: stream.kind.toUpperCase(), loaded: true, site: { title, headers: stream.headers } });
+    const site = { title, headers: stream.headers, known, audioSize, language: video.language || "" };
+    addMedia(tabId, { url: stream.url, kind: stream.kind.toUpperCase(), loaded: true, site });
   }
   // "-drc" files are the same audio with its loudness evened out.
   const files = video.files.filter((file) => !String(file.id).endsWith("-drc") && file.ext);
@@ -614,7 +623,7 @@ function addSiteVideo(tabId, video) {
       loaded: true,
       site: { title, headers: file.headers, group, label, detail, height: file.height ?? 0 },
     });
-  const quality = (f) => (f.height ? f.height + "p" + (f.fps > 31 ? Math.round(f.fps) : "") : f.ext.toUpperCase());
+  const quality = (f) => (f.height ? qualityName(f.width, f.height) + (f.fps > 31 ? Math.round(f.fps) : "") : f.ext.toUpperCase());
   for (const f of [...muxed, ...silent]) {
     const detail = [f.ext.toUpperCase(), codecName(f.vcodec || "", "video"), formatSize(f.size)].filter(Boolean).join(" · ");
     add(f, muxed.includes(f) ? "Video" : "Video (no sound)", quality(f), detail);
@@ -680,37 +689,69 @@ function streamName(url) {
   }
 }
 
-/** Menu groups for one stream: every video quality, then audio on its own. */
+const QUALITY_STEPS = [144, 240, 360, 480, 720, 1080, 1440, 2160, 4320];
+
+/** A picture size as video sites name it: by the 16:9 size it matches, so
+ * a wide 3840×1920 video is "2160p" and a 1080×1920 phone video "1080p". */
+function qualityName(width, height) {
+  if (!height) return "";
+  const long = Math.max(width || 0, height);
+  const short = Math.min(width || height, height);
+  const lines = Math.max(short, Math.round((long * 9) / 16));
+  const step = QUALITY_STEPS.find((p) => Math.abs(p - lines) / p < 0.04);
+  return (step ?? lines) + "p";
+}
+
+/** Menu groups for one stream: one entry per picture quality, then audio
+ * on its own, one entry per language.
+ *
+ * Where a quality comes in both H.264 and VP9, H.264 goes first because it
+ * plays everywhere, except for streams found through yt-dlp (YouTube): the
+ * engine (aria2-next 3.0.6) fails to remux YouTube's H.264 segments, whose
+ * first packets carry no timestamps, while VP9 works. */
 function streamGroups(entry, presentation) {
   const seconds = presentation.live ? 0 : presentation.durationMs / 1000;
   const estimate = (bandwidth) => (seconds && bandwidth ? "≈ " + formatSize((bandwidth * seconds) / 8) : "");
   const audios = presentation.tracks.filter((t) => t.type === "audio").sort((a, b) => b.bandwidth - a.bandwidth);
   const bestAudio = audios[0];
+  const known = entry.site?.known ?? {};
+  const preferred = entry.site ? "VP9" : "H.264";
+  // The video's own language, not a dubbed one, goes with the picture.
+  const original = entry.site?.language;
+  const withAudio = original && audios.some((t) => t.language === original) ? original : "best";
   const seen = new Set();
   const video = presentation.tracks
     .filter((t) => t.type === "video" || t.type === "muxed")
-    .sort((a, b) => b.height - a.height || b.frameRate - a.frameRate || b.bandwidth - a.bandwidth)
-    .flatMap((track) => {
-      const fps = track.frameRate > 31 ? Math.round(track.frameRate) : "";
-      const label = track.height ? track.height + "p" + fps : kbps(track.bandwidth);
-      const codec = codecName(track.codec, "video");
-      if (seen.has(label + codec)) return [];
-      seen.add(label + codec);
+    .map((track) => ({ track, codec: codecName(track.codec, "video"), facts: known[track.width + "x" + track.height + "|" + codecName(track.codec, "video")] }))
+    .sort(
+      (a, b) =>
+        b.track.height * b.track.width - a.track.height * a.track.width ||
+        (b.codec === preferred) - (a.codec === preferred) ||
+        b.track.frameRate - a.track.frameRate ||
+        b.track.bandwidth - a.track.bandwidth,
+    )
+    .flatMap(({ track, codec, facts }) => {
+      const rate = Math.max(track.frameRate, facts?.fps ?? 0);
+      const label = track.height ? qualityName(track.width, track.height) + (rate > 31 ? Math.round(rate) : "") : kbps(track.bandwidth);
+      if (seen.has(label)) return [];
+      seen.add(label);
       const audioBandwidth = track.type === "video" ? bestAudio?.bandwidth ?? 0 : 0;
+      const size = facts?.size ? "≈ " + formatSize(facts.size + (track.type === "video" ? entry.site.audioSize : 0)) : estimate(track.bandwidth + audioBandwidth);
       return [{
         label,
-        detail: [presentation.live ? "Live" : "", codec, estimate(track.bandwidth + audioBandwidth)].filter(Boolean).join(" · "),
-        choice: { url: entry.url, video: track.id, audio: "best", format: containerFor(track.codec + "," + (bestAudio?.codec ?? "")) },
+        detail: [presentation.live ? "Live" : "", codec, size].filter(Boolean).join(" · "),
+        choice: { url: entry.url, video: track.id, audio: withAudio, format: containerFor(track.codec + "," + (bestAudio?.codec ?? "")) },
       }];
     });
   const heard = new Set();
-  const audio = audios.flatMap((track) => {
+  const audio = [...audios].sort((a, b) => (b.language === original) - (a.language === original)).flatMap((track) => {
     const codec = codecName(track.codec, "audio");
-    const key = track.language + codec + kbps(track.bandwidth);
-    if (heard.has(key)) return [];
-    heard.add(key);
+    // The best bitrate of each language.
+    if (heard.has(track.language)) return [];
+    heard.add(track.language);
+    const language = track.language ? track.language + (track.language === original && audios.some((t) => t.language !== original) ? " (original)" : "") : "";
     return [{
-      label: track.language ? "Audio · " + track.language : "Audio",
+      label: language ? "Audio · " + language : "Audio",
       detail: [track.bandwidth ? kbps(track.bandwidth) : "", codec, estimate(track.bandwidth)].filter(Boolean).join(" · "),
       choice: { url: entry.url, video: "none", audio: track.id, format: containerFor(track.codec) },
     }];

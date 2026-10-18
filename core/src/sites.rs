@@ -143,6 +143,7 @@ fn video(info: &Value) -> Value {
                 "ext": format["ext"],
                 "vcodec": format["vcodec"],
                 "acodec": format["acodec"],
+                "width": format["width"],
                 "height": format["height"],
                 "fps": format["fps"],
                 "tbr": format["tbr"],
@@ -156,6 +157,7 @@ fn video(info: &Value) -> Value {
         "title": info["title"],
         "duration": info["duration"],
         "site": info["extractor_key"],
+        "language": info["language"],
         "streams": streams,
         "files": files,
     })
