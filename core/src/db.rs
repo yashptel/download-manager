@@ -104,7 +104,8 @@ impl Db {
                     progress: progress(status, total as u64, done as u64),
                     eta_secs: None,
                     connections: 0,
-                    error: row.get(9)?,
+                    // Older rows hold the engine's own wording.
+                    error: row.get::<_, Option<String>>(9)?.map(|error| crate::tasks::friendly_error(&error)),
                     added_at: row.get(10)?,
                     finished_at: row.get(11)?,
                 };

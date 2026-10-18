@@ -902,6 +902,12 @@ fn free_path(to: &Path) -> PathBuf {
 
 /// The engine's "HTTP 403" in words.
 pub fn friendly_error(message: &str) -> String {
+    if message.starts_with("Another task is writing") {
+        return "Another download is saving to the same file".into();
+    }
+    if message.starts_with("Requested media track or language is unavailable") {
+        return "That quality is no longer offered. Download it again from the video menu".into();
+    }
     let status = message
         .strip_prefix("HTTP ")
         .and_then(|rest| rest.get(..3))

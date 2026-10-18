@@ -18,10 +18,16 @@ enum AddDownloadPrompt {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticLinkDetectionEnabled = false
         textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.textContainerInset = NSSize(width: 3, height: 5)
         textView.string = links(in: NSPasteboard.general.string(forType: .string) ?? "").joined(separator: "\n")
         textView.selectAll(nil)
-        alert.accessoryView = scrollView
-        alert.addButton(withTitle: "OK")
+        // The alert sets its accessory wider than its text; the box is inset
+        // to line up with the text on both sides.
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 96))
+        scrollView.frame = NSRect(x: 6, y: 0, width: 428, height: 96)
+        box.addSubview(scrollView)
+        alert.accessoryView = box
+        alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = textView
         alert.beginSheetModal(for: window) { response in

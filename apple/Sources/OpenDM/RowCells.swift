@@ -150,6 +150,7 @@ final class CardCellView: NSTableCellView {
             if let left = Format.remaining(task.etaSecs) { status.append(left) }
         }
         statusText.setIfChanged(status.joined(separator: " · "))
+        statusText.toolTip = task.status == .failed ? task.error : nil
         bar.update(progress: max(task.progress, 0), color: look.color)
 
         let percent = task.progress >= 0 ? "\(Int((task.progress * 100).rounded(.down)))%" : nil
@@ -158,7 +159,12 @@ final class CardCellView: NSTableCellView {
         case (_, 0): nil
         case (let done, let total): "\(Format.bytes(min(done, total))) / \(Format.bytes(total))"
         }
-        amountText.setIfChanged([percent, size].compactMap { $0 }.joined(separator: " · "))
+        let amount: String = switch task.status {
+        case .complete: Format.size(task)
+        case _ where task.doneBytes == 0 && task.totalBytes == 0: "Not started"
+        default: [percent, size].compactMap { $0 }.joined(separator: " · ")
+        }
+        amountText.setIfChanged(amount)
 
         let (symbol, label): (String, String) = switch task.status {
         case .downloading, .queued: ("pause", "Pause")
@@ -263,6 +269,7 @@ final class ListCellView: NSTableCellView {
         let fileIcon = FileIcons.icon(for: task.name, size: 32)
         if icon.image !== fileIcon { icon.image = fileIcon }
         detail.setIfChanged(Format.detail(task))
+        detail.toolTip = task.status == .failed ? task.error : nil
         progress = max(task.progress, 0)
         barColor = StatusLook.of(task).color
         let showsBar = task.status != .complete && (task.progress > 0 || task.status == .downloading)

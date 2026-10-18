@@ -36,9 +36,10 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
     func storeStatusDidChange(_ store: DownloadStore) {
         let stats = store.stats
         item.button?.title = stats.active > 0 ? Format.speed(stats.downloadSpeed) : ""
-        speedItem.title = switch (stats.active, stats.waiting) {
-        case (0, 0): "No active downloads"
-        case (0, let waiting): "\(waiting) waiting"
+        let idle = Format.idle(store.rows)
+        speedItem.title = switch (stats.active, idle.isEmpty) {
+        case (0, true): "No active downloads"
+        case (0, false): idle
         case (let active, _) where stats.downloadSpeed > 0: "\(active) downloading · \(Format.speed(stats.downloadSpeed))"
         case (let active, _): "\(active) downloading"
         }

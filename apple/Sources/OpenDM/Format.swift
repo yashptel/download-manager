@@ -80,6 +80,15 @@ enum Format {
         }
     }
 
+    /// What waits when nothing downloads: "2 paused", "1 queued · 3 paused".
+    static func idle(_ rows: [TaskRow]) -> String {
+        let queued = rows.count { $0.status == .queued }
+        let paused = rows.count { $0.status == .paused }
+        return [queued > 0 ? "\(queued) queued" : nil, paused > 0 ? "\(paused) paused" : nil]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
     /// One line describing where a download stands, for row layouts.
     static func detail(_ task: TaskRow) -> String {
         let parts: [String?] = switch task.status {

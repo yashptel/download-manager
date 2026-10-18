@@ -138,8 +138,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case .running where stats.active > 0 && stats.downloadSpeed > 0:
             "\(stats.active) downloading · \(Format.speed(stats.downloadSpeed))"
         case .running where stats.active > 0: "\(stats.active) downloading"
-        case .running where stats.waiting > 0: "\(stats.waiting) waiting"
-        case .running: ""
+        case .running: Format.idle(store.rows)
         }
         guard let statusLabel else {
             window?.subtitle = status

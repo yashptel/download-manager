@@ -274,8 +274,16 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
             emptyTitle.stringValue = "No Downloads"
             emptySubtitle.stringValue = "Press ⌘N or drop a link here to start one."
         } else {
-            emptyTitle.stringValue = searchText.isEmpty ? "Nothing Here" : "No Results"
-            emptySubtitle.stringValue = searchText.isEmpty ? "No downloads match this view." : "No downloads match “\(searchText)”."
+            let (title, subtitle) = switch filter {
+            case _ where !searchText.isEmpty: ("No Results", "No downloads match “\(searchText)”.")
+            case .all: ("No Downloads", "Press ⌘N or drop a link here to start one.")
+            case .unfinished: ("Nothing Unfinished", "Downloads still running, paused or failed appear here.")
+            case .finished: ("Nothing Finished Yet", "Completed downloads appear here.")
+            case .category(let name) where name == "Other": ("Nothing in Other", "Downloads that fit no other category appear here.")
+            case .category(let name): ("Nothing in \(name)", "Downloads sorted into \(name) appear here.")
+            }
+            emptyTitle.stringValue = title
+            emptySubtitle.stringValue = subtitle
         }
         emptyView.isHidden = !ids.isEmpty
     }
@@ -481,7 +489,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         alert.messageText = rows.count == 1
             ? "Delete “\(rows[0].name)” from disk?"
             : "Delete the files of \(rows.count) downloads from disk?"
-        alert.informativeText = "The files are deleted permanently."
+        alert.informativeText = rows.count == 1 ? "The file is deleted permanently." : "The files are deleted permanently."
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         alert.buttons[0].hasDestructiveAction = true
