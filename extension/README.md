@@ -27,6 +27,10 @@ starts.
 
 ## Try it during development
 
+`node scripts/try-extension.mjs chrome [url]` (or `firefox`) opens that browser
+with a separate profile in `~/.opendm-dev` and the extension already loaded.
+To use your own browser profile instead:
+
 Build and start the app once (`scripts/build-macos.sh`, then open
 `build/OpenDM.app`) so it registers the host. Then:
 
