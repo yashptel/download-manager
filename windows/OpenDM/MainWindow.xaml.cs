@@ -218,7 +218,8 @@ public sealed partial class MainWindow : Window
             }
             statusChanged |= old is null || old.Status != row.Status;
             structural |= shownIds.Contains(row.Id) != Matches(row)
-                || (old is not null && sortColumn is { } column && Compare(old, row, column) != 0);
+                || (old is not null && sortColumn is { } column
+                    && Compare(SortKey(old, column), SortKey(row, column), column) != 0);
         }
         if (structural) Rebuild();
         if (recount) Recount();
@@ -231,14 +232,22 @@ public sealed partial class MainWindow : Window
             || row.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase)
             || row.Url.Contains(search, StringComparison.OrdinalIgnoreCase));
 
-    private static int Compare(TaskRow a, TaskRow b, SortColumn column) => column switch
+    /// <summary>What a column sorts by; speed as displayed, so equal-looking speeds tie.</summary>
+    private static (double Number, string? Text) SortKey(TaskRow row, SortColumn column) => column switch
     {
-        SortColumn.Name => Native.CompareNatural(a.Name, b.Name),
-        SortColumn.Size => a.TotalBytes.CompareTo(b.TotalBytes),
-        SortColumn.Progress => a.Progress.CompareTo(b.Progress),
-        SortColumn.Speed => a.Speed.CompareTo(b.Speed),
-        SortColumn.Eta => (a.EtaSecs ?? ulong.MaxValue).CompareTo(b.EtaSecs ?? ulong.MaxValue),
-        _ => string.Compare(Format.Status(a), Format.Status(b), StringComparison.CurrentCulture),
+        SortColumn.Name => (0, row.Name),
+        SortColumn.Size => (row.TotalBytes, null),
+        SortColumn.Progress => (row.Progress, null),
+        SortColumn.Speed => (Format.Displayed(row.Speed), null),
+        SortColumn.Eta => (row.EtaSecs ?? double.MaxValue, null),
+        _ => (0, Format.Status(row)),
+    };
+
+    private static int Compare((double Number, string? Text) a, (double Number, string? Text) b, SortColumn column) => column switch
+    {
+        SortColumn.Name => Native.CompareNatural(a.Text!, b.Text!),
+        SortColumn.Status => string.Compare(a.Text, b.Text, StringComparison.CurrentCulture),
+        _ => a.Number.CompareTo(b.Number),
     };
 
     private void Rebuild()
@@ -248,21 +257,31 @@ public sealed partial class MainWindow : Window
         if (sortColumn is { } column)
         {
             var sign = sortAscending ? 1 : -1;
-            next.Sort((a, b) =>
+            // Rows that compare equal keep their current order, so live values that
+            // jitter around the same displayed number do not swap rows back and forth.
+            var shown = new Dictionary<DownloadItem, int>(visible.Count, ReferenceEqualityComparer.Instance);
+            for (var i = 0; i < visible.Count; i++)
             {
-                var order = Compare(a.Row, b.Row, column) * sign;
+                shown[visible[i]] = i;
+            }
+            var keyed = next
+                .Select(item => (Item: item, Key: SortKey(item.Row, column), Shown: shown.GetValueOrDefault(item, int.MaxValue)))
+                .ToArray();
+            Array.Sort(keyed, (a, b) =>
+            {
+                var order = Compare(a.Key, b.Key, column) * sign;
                 if (order != 0) return order;
-                order = a.Row.AddedAt.CompareTo(b.Row.AddedAt);
-                return order != 0 ? order : string.CompareOrdinal(a.Id, b.Id);
+                order = a.Shown.CompareTo(b.Shown);
+                if (order != 0) return order;
+                order = a.Item.Row.AddedAt.CompareTo(b.Item.Row.AddedAt);
+                return order != 0 ? order : string.CompareOrdinal(a.Item.Id, b.Item.Id);
             });
+            next = keyed.Select(entry => entry.Item).ToList();
         }
         shownIds = next.Select(item => item.Id).ToHashSet();
-        if (visible.ApplyOrder(next) && selected.Count > 0)
+        foreach (var item in visible.ApplyOrder(next))
         {
-            foreach (var item in visible.Where(item => selected.Contains(item.Id)))
-            {
-                Table.SelectedItems.Add(item);
-            }
+            if (selected.Contains(item.Id)) Table.SelectedItems.Add(item);
         }
         EmptyText.Text = store.Items.Count == 0
             ? "Drop a link here or press Ctrl+N to add a download."
