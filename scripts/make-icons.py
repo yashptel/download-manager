@@ -180,10 +180,8 @@ def main():
     save_ico(windows / "Tray-light.ico", [tray_icon(n, "#1c1c1c") for n in tray])  # for light taskbars
     save_ico(windows / "Tray-dark.ico", [tray_icon(n, "#ffffff") for n in tray])   # for dark taskbars
 
-    apple = ROOT / "apple" / "Resources"
-    apple.mkdir(exist_ok=True)
     mac = [mac_icon(n) for n in (16, 32, 64, 128, 256, 512, 1024)]
-    mac[-1].save(apple / "OpenDM.icns", append_images=mac[:-1])
+    mac[-1].save(ROOT / "apple" / "AppIcon.icns", append_images=mac[:-1])
 
     (ROOT / "docs" / "icon.svg").write_text(svg(), encoding="utf-8")
 

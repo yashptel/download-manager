@@ -40,6 +40,10 @@ enum MainMenu {
                  [.command, .option]),
         ]))
         main.addItem(submenu("View", [
+            styleItem(.cards, "1"),
+            styleItem(.list, "2"),
+            styleItem(.columns, "3"),
+            .separator(),
             item("Show Sidebar", #selector(NSSplitViewController.toggleSidebar(_:)), "s", [.command, .control]),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ]))
@@ -61,6 +65,12 @@ enum MainMenu {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.keyEquivalentModifierMask = modifiers
         return item
+    }
+
+    private static func styleItem(_ style: ListStyle, _ key: String) -> NSMenuItem {
+        let menuItem = item("as \(style.title)", #selector(MainWindowController.setListStyle(_:)), key)
+        menuItem.tag = style.rawValue
+        return menuItem
     }
 
     private static func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {

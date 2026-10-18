@@ -54,8 +54,14 @@ rm -rf apple/Frameworks/opendm_coreFFI.xcframework
 xcodebuild -create-xcframework -library "$work/libopendm_core.a" -headers "$work/headers" \
     -output apple/Frameworks/opendm_coreFFI.xcframework > /dev/null
 
-swift build -c release --package-path apple $swift_archs
-binaries=$(swift build -c release --package-path apple $swift_archs --show-bin-path)
+# SwiftPM links through clang with --sysroot, so clang records the deployment
+# target as the SDK version and AppKit runs the app in macOS 13 compatibility
+# mode (old chrome, misaligned sidebar toolbar). -isysroot makes it read the
+# real SDK version.
+sdk=$(xcrun --sdk macosx --show-sdk-path)
+swift_flags="$swift_archs -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $sdk"
+swift build -c release --package-path apple $swift_flags
+binaries=$(swift build -c release --package-path apple $swift_flags --show-bin-path)
 
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 app="$root/build/OpenDM.app"
@@ -63,8 +69,8 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binaries/OpenDM" "$app/Contents/MacOS/OpenDM"
 cp "$work/aria2-next" "$app/Contents/MacOS/aria2-next"
-cp apple/Resources/OpenDM.icns "$app/Contents/Resources/OpenDM.icns"
 cp LICENSE "$app/Contents/Resources/LICENSE"
+cp apple/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 cp vendor/aria2-next/bin/COPYING "$app/Contents/Resources/aria2-next-COPYING"
 sed "s/@VERSION@/$version/g" apple/Info.plist > "$app/Contents/Info.plist"
 
