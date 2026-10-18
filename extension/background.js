@@ -555,10 +555,10 @@ function siteDomain(host) {
   return parts.slice(-keep).join(".");
 }
 
-async function siteCookies(tab) {
+async function siteCookies(tab, url) {
   try {
-    const domain = siteDomain(new URL(tab.url).hostname);
-    const cookies = await api.cookies.getAll(tab.cookieStoreId ? { domain, storeId: tab.cookieStoreId } : { domain });
+    const domain = siteDomain(new URL(url).hostname);
+    const cookies = await api.cookies.getAll(tab?.cookieStoreId ? { domain, storeId: tab.cookieStoreId } : { domain });
     return cookies.slice(0, 500).map(({ domain, hostOnly, path, secure, expirationDate, name, value }) => ({
       domain, hostOnly, path, secure, expirationDate, name, value,
     }));
@@ -567,14 +567,13 @@ async function siteCookies(tab) {
   }
 }
 
-/** yt-dlp's videos for the tab's page, looked up once and kept a while. */
-function siteLookup(tab) {
-  const url = tab?.url ?? "";
+/** yt-dlp's videos for a page, looked up once and kept a while. */
+function siteLookup(tab, url) {
   if (!/^https?:/i.test(url)) return Promise.resolve([]);
   const cached = sites.get(url);
   if (cached && Date.now() - cached.at < cached.ttl) return cached.promise;
   const record = { at: Date.now(), ttl: SITE_TTL };
-  record.promise = siteCookies(tab)
+  record.promise = siteCookies(tab, url)
     .then((cookies) => ask({ type: "site", url, cookies }, { timeoutMs: 120_000 }))
     .then((answer) => {
       if (answer.result !== "ready") {
@@ -722,14 +721,15 @@ function streamGroups(entry, presentation) {
   ].filter((group) => group.options.length);
 }
 
-/** Everything the tab's video menu offers. src is the hovered video's own URL. */
-async function formats(tabId, src) {
+/** Everything the tab's video menu offers. src is the hovered video's own
+ * URL; page is the page to ask yt-dlp about when it is not the tab's. */
+async function formats(tabId, src, page) {
   const tab = await api.tabs.get(tabId).catch(() => null);
   // yt-dlp first, since it adds finds. With finds from the page already in
   // hand, a slow answer is not worth waiting long for.
   const ownFinds = visibleMedia(tabId).length > 0;
   let siteNote = "";
-  const site = siteLookup(tab).catch((error) => {
+  const site = siteLookup(tab, page || tab?.url || "").catch((error) => {
     siteNote = error.message;
     return [];
   });
@@ -829,6 +829,13 @@ function noteError(error) {
   console.warn("OpenDM:", lastError);
 }
 
+/** The page a video belongs to: the one it previews, or the embedded
+ * player's own page (a YouTube player on a blog), else the tab's. */
+function videoPage(message, sender) {
+  if (typeof message.link === "string" && /^https?:/i.test(message.link)) return message.link;
+  return sender.frameId ? sender.url : "";
+}
+
 async function onMessage(message, sender) {
   switch (message?.type) {
     case "bypass":
@@ -841,11 +848,11 @@ async function onMessage(message, sender) {
     case "formats": {
       // The popup names the tab; the page's own menu is in sender.tab.
       const tabId = message.tabId ?? sender.tab?.id;
-      return { ok: true, ...(await formats(tabId, message.src)) };
+      return { ok: true, ...(await formats(tabId, message.src, videoPage(message, sender))) };
     }
     case "prefetch":
       // Hovering a video: look the page up before the click, if OpenDM runs.
-      if (sender.tab && app.state === "connected") formats(sender.tab.id).catch(() => {});
+      if (sender.tab && app.state === "connected") formats(sender.tab.id, "", videoPage(message, sender)).catch(() => {});
       return { ok: true };
     case "download-choice":
       await downloadChoice(message.tabId ?? sender.tab?.id, message.choice);

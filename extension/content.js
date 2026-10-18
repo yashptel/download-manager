@@ -167,9 +167,10 @@
   function show(video) {
     if (!host || !host.isConnected) build();
     if (menu && video !== current) closeMenu();
-    if (prefetched !== location.href) {
-      prefetched = location.href;
-      send({ type: "prefetch" });
+    const link = linkFor(video);
+    if (prefetched !== location.href + link) {
+      prefetched = location.href + link;
+      send({ type: "prefetch", link });
     }
     current = video;
     place();
@@ -189,6 +190,18 @@
     button.querySelector("span").textContent = text;
   }
 
+  /** The page a video previews: feeds play previews of other pages over
+   * their links (YouTube's home page), and those pages are what to look up. */
+  function linkFor(video) {
+    const box = video.getBoundingClientRect();
+    const under = document.elementsFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    const here = location.href.split("#")[0];
+    for (const link of [video.closest("a[href]"), ...under.map((node) => node.closest("a[href]"))]) {
+      if (link && /^https?:/i.test(link.href) && link.host === location.host && link.href.split("#")[0] !== here) return link.href;
+    }
+    return "";
+  }
+
   /** Shows a result on the button for a moment. */
   function flash(text, ms) {
     busy = true;
@@ -206,7 +219,7 @@
     if (busy || !current) return;
     busy = true;
     label("Finding qualities…");
-    const answer = await send({ type: "formats", src: current.currentSrc || current.src || "" });
+    const answer = await send({ type: "formats", src: current.currentSrc || current.src || "", link: linkFor(current) });
     busy = false;
     label("Download video");
     if (!answer?.ok) return flash(answer?.error || "OpenDM is not available", 3500);

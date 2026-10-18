@@ -36,6 +36,9 @@ else {
 
 async function chrome() {
   const profile = DEV + "/chrome-profile";
+  // Chrome keeps running the service worker it cached for an unpacked
+  // extension even after its files change; without the cache it reads them.
+  fs.rmSync(profile + "/Default/Service Worker", { recursive: true, force: true });
   // With its own profile, Chrome reads native messaging hosts from the profile.
   fs.mkdirSync(profile + "/NativeMessagingHosts", { recursive: true });
   fs.writeFileSync(
@@ -52,17 +55,26 @@ async function chrome() {
       "--remote-debugging-pipe", "--enable-unsafe-extension-debugging", ...urls],
     { detached: true, stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] },
   );
-  const id = await new Promise((resolve, reject) => {
-    let buffer = "";
-    child.stdio[4].on("data", (chunk) => {
-      buffer += chunk;
-      const end = buffer.indexOf("\0");
-      if (end < 0) return;
+  // DevTools pipe: NUL-terminated JSON messages, answers matched by id.
+  const waiting = new Map();
+  let buffer = "";
+  child.stdio[4].on("data", (chunk) => {
+    buffer += chunk;
+    for (let end; (end = buffer.indexOf("\0")) >= 0; buffer = buffer.slice(end + 1)) {
       const answer = JSON.parse(buffer.slice(0, end));
-      answer.error ? reject(new Error(answer.error.message)) : resolve(answer.result.id);
-    });
-    child.stdio[3].write(JSON.stringify({ id: 1, method: "Extensions.loadUnpacked", params: { path: EXTENSION } }) + "\0");
+      waiting.get(answer.id)?.(answer);
+    }
   });
+  let next = 1;
+  const call = (method, params) =>
+    new Promise((resolve) => {
+      const id = next++;
+      waiting.set(id, resolve);
+      child.stdio[3].write(JSON.stringify({ id, method, params }) + "\0");
+    });
+  const loaded = await call("Extensions.loadUnpacked", { path: EXTENSION });
+  if (loaded.error) throw new Error(loaded.error.message);
+  const id = loaded.result.id;
   console.log("Chrome is open with OpenDM Connect (" + id + "). Close that Chrome to end this script.");
   child.on("exit", () => process.exit(0));
 }
