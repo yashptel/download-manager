@@ -549,7 +549,7 @@ public sealed partial class MainWindow : Window
                 ? (await e.DataView.GetWebLinkAsync()).AbsoluteUri
                 : await e.DataView.GetTextAsync();
             var urls = Links.Find(text);
-            if (urls.Length > 0) core.AddUrls(urls, false);
+            if (urls.Length > 0) NewDownloads.Present(urls.Select(NewDownloads.Link).ToList(), store, core);
         }
         finally
         {
@@ -577,18 +577,16 @@ public sealed partial class MainWindow : Window
         panel.Children.Add(box);
         var dialog = new ContentDialog
         {
-            Title = "New download",
+            Title = "New Download",
             Content = panel,
-            PrimaryButtonText = "Start",
-            SecondaryButtonText = "Download later",
+            PrimaryButtonText = "Download",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
         };
         var result = await ShowDialog(dialog);
         var urls = Links.Find(box.Text);
-        if (urls.Length == 0) return;
-        if (result == ContentDialogResult.Primary) core.AddUrls(urls, false);
-        else if (result == ContentDialogResult.Secondary) core.AddUrls(urls, true);
+        if (result != ContentDialogResult.Primary || urls.Length == 0) return;
+        NewDownloads.Present(urls.Select(NewDownloads.Link).ToList(), store, core);
     }
 
     private static async Task<string> ClipboardText()

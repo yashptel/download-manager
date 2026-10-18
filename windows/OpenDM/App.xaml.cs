@@ -32,13 +32,7 @@ public partial class App : Application
             return;
         }
         store.Load(core);
-        store.BrowserDownloadsReceived += (downloads, _) =>
-        {
-            // Until the Download File Info dialog exists, start right away
-            // and show the list so the handoff is visible.
-            core.AddDownloads(downloads, false);
-            ShowMainWindow();
-        };
+        store.BrowserDownloadsReceived += (downloads, _) => NewDownloads.Present(downloads, store, core);
         window = new MainWindow(store, core);
         tray = new TrayIcon(store, core, ShowMainWindow, Quit);
         core.Start();
