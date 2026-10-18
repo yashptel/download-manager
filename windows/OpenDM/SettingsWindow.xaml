@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="OpenDM.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:OpenDM"
+    Title="OpenDM Settings">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <NavigationView x:Name="Nav" PaneDisplayMode="Left" IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
+                    IsPaneToggleButtonVisible="False" OpenPaneLength="220" SelectionChanged="Nav_SelectionChanged">
+        <NavigationView.Resources>
+            <Style x:Key="Card" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+                <Setter Property="Padding" Value="16,12" />
+                <Setter Property="MinHeight" Value="64" />
+            </Style>
+            <Style x:Key="CardTitle" TargetType="TextBlock">
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="Section" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="Margin" Value="1,24,0,4" />
+            </Style>
+            <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Margin" Value="1,4,0,0" />
+            </Style>
+            <Style x:Key="Switch" TargetType="ToggleSwitch">
+                <Setter Property="OnContent" Value="" />
+                <Setter Property="OffContent" Value="" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="Grid.Column" Value="1" />
+                <Setter Property="HorizontalAlignment" Value="Right" />
+            </Style>
+            <Style x:Key="Number" TargetType="NumberBox">
+                <Setter Property="Width" Value="120" />
+                <Setter Property="SpinButtonPlacementMode" Value="Compact" />
+                <Setter Property="Minimum" Value="0" />
+                <Setter Property="Maximum" Value="2147483647" />
+            </Style>
+            <Style x:Key="Unit" TargetType="TextBlock">
+                <Setter Property="Width" Value="40" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+            <Style x:Key="Field" TargetType="TextBox">
+                <Setter Property="Width" Value="300" />
+                <Setter Property="Grid.Column" Value="1" />
+            </Style>
+            <Style x:Key="Editor" TargetType="TextBox">
+                <Setter Property="AcceptsReturn" Value="True" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+            </Style>
+            <Style x:Key="TableHeader" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+            <Style x:Key="Page" TargetType="StackPanel">
+                <Setter Property="Spacing" Value="4" />
+                <Setter Property="Visibility" Value="Collapsed" />
+            </Style>
+        </NavigationView.Resources>
+
+        <NavigationView.MenuItems>
+            <NavigationViewItem Content="General" Tag="General"><NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem Content="Browser" Tag="Browser"><NavigationViewItem.Icon><FontIcon Glyph="&#xE774;" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem Content="Categories" Tag="Categories"><NavigationViewItem.Icon><FontIcon Glyph="&#xE8B7;" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem Content="Connection" Tag="Connection"><NavigationViewItem.Icon><FontIcon Glyph="&#xE968;" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem Content="Logins" Tag="Logins"><NavigationViewItem.Icon><FontIcon Glyph="&#xE8D7;" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem Content="Scheduler" Tag="Scheduler"><NavigationViewItem.Icon><FontIcon Glyph="&#xE823;" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem Content="Engine" Tag="Engine"><NavigationViewItem.Icon><FontIcon Glyph="&#xE756;" /></NavigationViewItem.Icon></NavigationViewItem>
+        </NavigationView.MenuItems>
+
+        <ScrollViewer x:Name="Scroller">
+            <StackPanel MaxWidth="900" Padding="36,20,36,36" HorizontalAlignment="Stretch">
+                <TextBlock x:Name="PageTitle" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,16" />
+
+                <!-- General -->
+                <StackPanel x:Name="GeneralPage" Style="{StaticResource Page}">
+                    <Border Style="{StaticResource Card}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Save downloads to" Style="{StaticResource CardTitle}" />
+                            <TextBlock x:Name="DownloadDirText" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right"
+                                       TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <Button Grid.Column="2" Content="Browse&#x2026;" Click="DownloadDir_Click" AutomationProperties.Name="Choose the download folder" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Sort into category folders" Style="{StaticResource CardTitle}" />
+                            <ToggleSwitch x:Name="CategoryFoldersSwitch" Style="{StaticResource Switch}" AutomationProperties.Name="Sort into category folders" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Downloads at a time" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="ConcurrentBox" Style="{StaticResource Number}" Minimum="1" Maximum="20" AutomationProperties.Name="Downloads at a time" />
+                                <TextBlock Style="{StaticResource Unit}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="When a download is added" Style="{StaticResource Section}" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Ask before starting it" Style="{StaticResource CardTitle}" />
+                            <ToggleSwitch x:Name="ConfirmSwitch" Style="{StaticResource Switch}" AutomationProperties.Name="Ask before starting it" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Show its progress window" Style="{StaticResource CardTitle}" />
+                            <ToggleSwitch x:Name="ProgressSwitch" Style="{StaticResource Switch}" AutomationProperties.Name="Show its progress window" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}"
+                               Text="Asking shows the Download File Info dialog to name the file and pick its folder. Without it, downloads start at once." />
+
+                    <Border Style="{StaticResource Card}" Margin="0,24,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Open at sign-in" Style="{StaticResource CardTitle}" />
+                            <ToggleSwitch x:Name="StartupSwitch" Style="{StaticResource Switch}" AutomationProperties.Name="Open at sign-in" Toggled="StartupSwitch_Toggled" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}"
+                               Text="OpenDM starts in the notification area, ready for downloads from the browser. Closing its window keeps it running there; Exit stops it." />
+                </StackPanel>
+
+                <!-- Browser -->
+                <StackPanel x:Name="BrowserPage" Style="{StaticResource Page}">
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Take over downloads from the browser" Style="{StaticResource CardTitle}" />
+                            <ToggleSwitch x:Name="CaptureSwitch" Style="{StaticResource Switch}" AutomationProperties.Name="Take over downloads from the browser" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}" Text="Needs the OpenDM Connect extension. Alt-click a link to keep that download in the browser." />
+
+                    <TextBlock Text="File types to take over" Style="{StaticResource Section}" />
+                    <TextBox x:Name="ExtensionsBox" Style="{StaticResource Editor}" Height="88" AutomationProperties.Name="File types to take over" />
+                    <TextBlock Style="{StaticResource Note}" Text="Separate them with spaces." />
+
+                    <TextBlock Text="Never take downloads from these sites" Style="{StaticResource Section}" />
+                    <TextBox x:Name="ExcludedBox" Style="{StaticResource Editor}" Height="72" PlaceholderText="example.com"
+                             AutomationProperties.Name="Never take downloads from these sites" />
+                    <TextBlock Style="{StaticResource Note}" Text="One per line. A site also covers its subdomains." />
+
+                    <Border Style="{StaticResource Card}" Margin="0,24,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Leave files smaller than" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="MinSizeBox" Style="{StaticResource Number}" AutomationProperties.Name="Leave files smaller than, in megabytes" />
+                                <TextBlock Style="{StaticResource Unit}" Text="MB" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}" Text="0 takes files of any size." />
+                </StackPanel>
+
+                <!-- Categories -->
+                <StackPanel x:Name="CategoriesPage" Style="{StaticResource Page}">
+                    <Border Style="{StaticResource Card}" Padding="0">
+                        <Grid>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <Grid Padding="16,10,16,6" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Category" Style="{StaticResource TableHeader}" />
+                                <TextBlock Grid.Column="1" Text="File types" Style="{StaticResource TableHeader}" />
+                                <TextBlock Grid.Column="2" Text="Folder" Style="{StaticResource TableHeader}" />
+                            </Grid>
+                            <ListView x:Name="CategoryList" Grid.Row="1" Height="300" SelectionMode="Single" Padding="0,0,0,4"
+                                      SelectionChanged="CategoryList_SelectionChanged">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="12,4" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="local:CategoryItem">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
+                                            <TextBox Text="{x:Bind Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" GotFocus="CategoryField_GotFocus"
+                                                     AutomationProperties.Name="Category" />
+                                            <TextBox Grid.Column="1" Text="{x:Bind Extensions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                     GotFocus="CategoryField_GotFocus" AutomationProperties.Name="File types" />
+                                            <Grid Grid.Column="2" ColumnSpacing="8">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <TextBlock Text="{x:Bind Folder, Mode=OneWay}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                           ToolTipService.ToolTip="{x:Bind Folder, Mode=OneWay}" />
+                                                <Button Grid.Column="1" Content="Browse&#x2026;" Click="CategoryFolder_Click" AutomationProperties.Name="Choose the folder" />
+                                            </Grid>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                        <Button Click="AddCategory_Click" ToolTipService.ToolTip="Add a category" AutomationProperties.Name="Add a category">
+                            <FontIcon Glyph="&#xE710;" FontSize="14" />
+                        </Button>
+                        <Button x:Name="RemoveCategoryButton" Click="RemoveCategory_Click" IsEnabled="False"
+                                ToolTipService.ToolTip="Remove the selected category" AutomationProperties.Name="Remove the selected category">
+                            <FontIcon Glyph="&#xE738;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Note}" Margin="1,8,0,0"
+                               Text="A file goes to the first category that lists its extension; the rest go to Other. A folder name without a path is inside the download folder." />
+                </StackPanel>
+
+                <!-- Connection -->
+                <StackPanel x:Name="ConnectionPage" Style="{StaticResource Page}">
+                    <TextBlock Text="Speed" Style="{StaticResource Section}" Margin="1,0,0,4" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="All downloads together" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="MaxSpeedBox" Style="{StaticResource Number}" AutomationProperties.Name="All downloads together, in kilobytes per second" />
+                                <TextBlock Style="{StaticResource Unit}" Text="KB/s" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Each download" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="TaskSpeedBox" Style="{StaticResource Number}" AutomationProperties.Name="Each download, in kilobytes per second" />
+                                <TextBlock Style="{StaticResource Unit}" Text="KB/s" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}" Text="0 means no limit." />
+
+                    <TextBlock Text="Connections" Style="{StaticResource Section}" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Connections per server" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="ConnectionsBox" Style="{StaticResource Number}" Minimum="1" Maximum="16" AutomationProperties.Name="Connections per server" />
+                                <TextBlock Style="{StaticResource Unit}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Split each file into" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="SplitBox" Style="{StaticResource Number}" Minimum="1" Maximum="64" AutomationProperties.Name="Split each file into parts" />
+                                <TextBlock Style="{StaticResource Unit}" Text="parts" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Smallest part" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <TextBox x:Name="MinSplitBox" Width="120" TextAlignment="Right" AutomationProperties.Name="Smallest part" />
+                                <TextBlock Style="{StaticResource Unit}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}" Text="Smallest part takes sizes such as 1M or 512K. A file smaller than two parts downloads in one piece." />
+
+                    <TextBlock Text="Retries" Style="{StaticResource Section}" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Tries per server" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="TriesBox" Style="{StaticResource Number}" AutomationProperties.Name="Tries per server" />
+                                <TextBlock Style="{StaticResource Unit}" Text="tries" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Wait between tries" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="RetryWaitBox" Style="{StaticResource Number}" AutomationProperties.Name="Wait between tries, in seconds" />
+                                <TextBlock Style="{StaticResource Unit}" Text="sec" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Give up on a silent connection after" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="TimeoutBox" Style="{StaticResource Number}" AutomationProperties.Name="Give up on a silent connection after, in seconds" />
+                                <TextBlock Style="{StaticResource Unit}" Text="sec" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Give up connecting after" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="ConnectTimeoutBox" Style="{StaticResource Number}" AutomationProperties.Name="Give up connecting after, in seconds" />
+                                <TextBlock Style="{StaticResource Unit}" Text="sec" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}" Text="0 tries keeps trying until you stop the download." />
+
+                    <TextBlock Text="Proxy" Style="{StaticResource Section}" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Proxy" Style="{StaticResource CardTitle}" />
+                            <TextBox x:Name="ProxyBox" Style="{StaticResource Field}" PlaceholderText="http://user:password@host:8080" AutomationProperties.Name="Proxy" />
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Not for" Style="{StaticResource CardTitle}" />
+                            <TextBox x:Name="NoProxyBox" Style="{StaticResource Field}" PlaceholderText="localhost, .example.com" AutomationProperties.Name="Not for" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}"
+                               Text="For downloads you add yourself; empty connects directly. Downloads from the browser use the browser's proxy." />
+
+                    <TextBlock Text="Requests" Style="{StaticResource Section}" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="User agent" Style="{StaticResource CardTitle}" />
+                            <TextBox x:Name="UserAgentBox" Style="{StaticResource Field}" PlaceholderText="The engine's own" AutomationProperties.Name="User agent" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}" Text="For downloads you add yourself. Downloads from the browser keep the browser's user agent." />
+
+                    <TextBlock Text="Headers for every download" Style="{StaticResource Section}" />
+                    <TextBox x:Name="HeadersBox" Style="{StaticResource Editor}" Height="72" PlaceholderText="Name: value" TextWrapping="NoWrap"
+                             FontFamily="Cascadia Mono, Consolas" AutomationProperties.Name="Headers for every download" />
+                    <TextBlock Style="{StaticResource Note}" Text="One per line." />
+
+                    <Border Style="{StaticResource Card}" Margin="0,24,0,0">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="When the file already exists" Style="{StaticResource CardTitle}" />
+                            <ComboBox x:Name="FileExistsBox" Grid.Column="1" MinWidth="200" AutomationProperties.Name="When the file already exists">
+                                <x:String>Save under a new name</x:String>
+                                <x:String>Replace it</x:String>
+                                <x:String>Stop with an error</x:String>
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <!-- Logins -->
+                <StackPanel x:Name="LoginsPage" Style="{StaticResource Page}">
+                    <Border Style="{StaticResource Card}" Padding="0">
+                        <Grid>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <Grid Padding="16,10,16,6" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Site" Style="{StaticResource TableHeader}" />
+                                <TextBlock Grid.Column="1" Text="User name" Style="{StaticResource TableHeader}" />
+                            </Grid>
+                            <ListView x:Name="LoginList" Grid.Row="1" Height="260" SelectionMode="Single" Padding="0,0,0,4"
+                                      SelectionChanged="LoginList_SelectionChanged">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="16,0" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="local:SiteLogin">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{x:Bind Site}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind User}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                            <TextBlock x:Name="NoLoginsText" Grid.Row="1" Text="No saved logins" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" IsHitTestVisible="False" />
+                        </Grid>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                        <Button Click="AddLogin_Click" ToolTipService.ToolTip="Add a login" AutomationProperties.Name="Add a login">
+                            <FontIcon Glyph="&#xE710;" FontSize="14" />
+                        </Button>
+                        <Button x:Name="RemoveLoginButton" Click="RemoveLogin_Click" IsEnabled="False"
+                                ToolTipService.ToolTip="Remove the selected login" AutomationProperties.Name="Remove the selected login">
+                            <FontIcon Glyph="&#xE738;" FontSize="14" />
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Note}" Margin="1,8,0,0"
+                               Text="When a site asks for a user name and password, OpenDM uses the login saved for it, or asks and offers to remember it. A site can include a path, such as example.com/private, to cover only that part. Passwords are kept in Windows Credential Manager." />
+                </StackPanel>
+
+                <!-- Scheduler -->
+                <StackPanel x:Name="SchedulerPage" Style="{StaticResource Page}">
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Start downloads on a schedule" Style="{StaticResource CardTitle}" />
+                            <ToggleSwitch x:Name="ScheduleSwitch" Style="{StaticResource Switch}" AutomationProperties.Name="Start downloads on a schedule" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource Note}" Text="Starts the downloads waiting in the list, such as those added with Download Later." />
+                    <StackPanel x:Name="ScheduleDetails" Spacing="4" Margin="0,24,0,0">
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Start at" Style="{StaticResource CardTitle}" />
+                                <TimePicker x:Name="StartPicker" Grid.Column="1" AutomationProperties.Name="Start at" />
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Pause them again" Style="{StaticResource CardTitle}" />
+                                <ToggleSwitch x:Name="PauseSwitch" Style="{StaticResource Switch}" AutomationProperties.Name="Pause them again" />
+                            </Grid>
+                        </Border>
+                        <Border x:Name="PauseCard" Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Pause at" Style="{StaticResource CardTitle}" />
+                                <TimePicker x:Name="StopPicker" Grid.Column="1" AutomationProperties.Name="Pause at" />
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Days" Style="{StaticResource CardTitle}" />
+                                <StackPanel x:Name="DaysPanel" Grid.Column="1" Orientation="Horizontal" Spacing="4" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Engine -->
+                <StackPanel x:Name="EnginePage" Style="{StaticResource Page}">
+                    <TextBlock Text="aria2 options" Style="{StaticResource Section}" Margin="1,0,0,4" />
+                    <TextBox x:Name="EngineBox" Style="{StaticResource Editor}" Height="220" TextWrapping="NoWrap" PlaceholderText="lowest-speed-limit=10K"
+                             FontFamily="Cascadia Mono, Consolas" AutomationProperties.Name="aria2 options" />
+                    <TextBlock Style="{StaticResource Note}"
+                               Text="One option per line, as name=value. They apply right away and win over the same settings on the other tabs. OpenDM tells you if the engine rejects one." />
+                    <HyperlinkButton Content="All aria2 options" Padding="1,4" NavigateUri="https://aria2.github.io/manual/en/html/aria2c.html#options" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </NavigationView>
+</Window>
+

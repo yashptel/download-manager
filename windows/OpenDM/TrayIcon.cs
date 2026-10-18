@@ -29,6 +29,7 @@ internal sealed class TrayIcon : IDisposable
         menu.Items.Add(new MenuFlyoutItem { Text = "Resume all", Command = Command(core.ResumeAll) });
         menu.Items.Add(new MenuFlyoutItem { Text = "Pause all", Command = Command(core.PauseAll) });
         menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(new MenuFlyoutItem { Text = "Settings\u2026", Command = Command(() => SettingsWindow.Show(core)) });
         menu.Items.Add(new MenuFlyoutItem { Text = "Exit", Command = Command(quit) });
 
         icon = new TaskbarIcon

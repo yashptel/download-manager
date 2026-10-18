@@ -447,6 +447,7 @@ public sealed partial class MainWindow : Window
     private void Remove_Click(object sender, RoutedEventArgs e) => _ = Remove(SelectedRows(), false);
     private void ResumeAll_Click(object sender, RoutedEventArgs e) => core.ResumeAll();
     private void PauseAll_Click(object sender, RoutedEventArgs e) => core.PauseAll();
+    private void Settings_Click(object sender, RoutedEventArgs e) => SettingsWindow.Show(core);
 
     private void Table_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {

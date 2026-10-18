@@ -75,6 +75,8 @@
                         <CommandBar.SecondaryCommands>
                             <AppBarButton Label="Resume all" Click="ResumeAll_Click" />
                             <AppBarButton Label="Pause all" Click="PauseAll_Click" />
+                            <AppBarSeparator />
+                            <AppBarButton Icon="Setting" Label="Settings" Click="Settings_Click" />
                         </CommandBar.SecondaryCommands>
                     </CommandBar>
                     <AutoSuggestBox x:Name="SearchBox" Grid.Column="1" VerticalAlignment="Center"

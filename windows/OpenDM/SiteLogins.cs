@@ -8,7 +8,7 @@ namespace OpenDM;
 /// host, optionally with a path ("example.com/private") to cover only that
 /// part of it. The password stays in Windows Credential Manager.
 /// </summary>
-internal sealed record SiteLogin(string Site, string User);
+public sealed record SiteLogin(string Site, string User);
 
 /// <summary>
 /// Site logins in Windows Credential Manager, as generic credentials named
