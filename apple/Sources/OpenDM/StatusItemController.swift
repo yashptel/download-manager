@@ -20,6 +20,7 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
         }
         let menu = NSMenu()
         menu.addItem(withTitle: "Show Downloads", action: #selector(AppDelegate.showMainWindow(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "New Download…", action: #selector(AppDelegate.newDownload(_:)), keyEquivalent: "")
         menu.addItem(.separator())
         speedItem.isEnabled = false
         menu.addItem(speedItem)

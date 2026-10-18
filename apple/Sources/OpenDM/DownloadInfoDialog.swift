@@ -442,11 +442,13 @@ struct BatchDownloadView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("\(model.chosenCount) of \(model.items.count) files selected")
+                Text("\(model.chosenCount) of \(model.items.count) \(model.items.count == 1 ? "file" : "files") selected")
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Select All") { model.setAll(true) }
+                    .disabled(model.chosenCount == model.items.count)
                 Button("Select None") { model.setAll(false) }
+                    .disabled(model.chosenCount == 0)
             }
             List($model.items) { $item in
                 HStack(spacing: 10) {
@@ -471,7 +473,8 @@ struct BatchDownloadView: View {
             // Plain rows: alternating stripes would not match the taller rows
             // in the empty space below them.
             .listStyle(.bordered(alternatesRowBackgrounds: false))
-            .frame(height: 300)
+            // As tall as its rows (42 pt each), up to a scrolling 300.
+            .frame(height: min(300, CGFloat(model.items.count) * 42 + 10))
             HStack {
                 Text("Save to:")
                 Text(model.folder.map(abbreviatedPath) ?? "Each file's category folder")
@@ -489,7 +492,7 @@ struct BatchDownloadView: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Download Later") { finish(.later) }
                     .disabled(model.chosenCount == 0)
-                Button("Start Download") { finish(.start) }
+                Button(model.chosenCount > 1 ? "Start Downloads" : "Start Download") { finish(.start) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.chosenCount == 0)
             }

@@ -59,6 +59,20 @@ enum Format {
         dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(unixMilliseconds) / 1000))
     }
 
+    /// "45 sec", "4 min 47 sec", "2 hr 5 min", "3 days 4 hr": the progress
+    /// window's time left, in the units the list uses.
+    static func timeLeft(_ seconds: UInt64?) -> String {
+        guard let seconds else { return "" }
+        switch seconds {
+        case ..<60: return "\(seconds) sec"
+        case ..<3600: return "\(seconds / 60) min \(seconds % 60) sec"
+        case ..<86_400: return "\(seconds / 3600) hr \(seconds % 3600 / 60) min"
+        default:
+            let days = seconds / 86_400
+            return "\(days) \(days == 1 ? "day" : "days") \(seconds % 86_400 / 3600) hr"
+        }
+    }
+
     /// "3 min left", "45 sec left", "2 hr 5 min left".
     static func remaining(_ seconds: UInt64?) -> String? {
         guard let seconds else { return nil }

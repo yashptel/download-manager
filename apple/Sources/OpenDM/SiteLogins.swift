@@ -215,7 +215,9 @@ struct LoginView: View {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 10) {
                 GridRow {
                     Text("User name:").gridColumnAlignment(.trailing)
+                    // Fill the row, so the fields end where the buttons do.
                     TextField("User name", text: $user).labelsHidden()
+                        .frame(maxWidth: .infinity)
                 }
                 GridRow {
                     Text("Password:")

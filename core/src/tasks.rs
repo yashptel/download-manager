@@ -908,6 +908,22 @@ pub fn friendly_error(message: &str) -> String {
     if message.starts_with("Requested media track or language is unavailable") {
         return "That quality is no longer offered. Download it again from the video menu".into();
     }
+    // The engine passes on curl's wording, such as "Failed to connect to
+    // example.com:443 after 3 ms: Could not connect to server".
+    if let Some(rest) = message.strip_prefix("Failed to connect to ") {
+        let server = rest.split(" after ").next().unwrap_or(rest).trim();
+        return format!("Could not connect to {server}");
+    }
+    if message.starts_with("Could not resolve") {
+        let server = message.rsplit(": ").next().filter(|host| *host != message && !host.contains(' '));
+        return match server {
+            Some(host) => format!("Could not find the server {host}"),
+            None => "Could not find the server".into(),
+        };
+    }
+    if message.starts_with("Operation timed out") {
+        return "The server stopped responding".into();
+    }
     let status = message
         .strip_prefix("HTTP ")
         .and_then(|rest| rest.get(..3))
@@ -1570,6 +1586,22 @@ fn percent_decode(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn engine_errors_read_as_sentences() {
+        assert_eq!(
+            friendly_error("Failed to connect to 127.0.0.1:8783 after 0 ms: Could not connect to server"),
+            "Could not connect to 127.0.0.1:8783"
+        );
+        assert_eq!(friendly_error("Could not resolve host: files.example"), "Could not find the server files.example");
+        assert_eq!(
+            friendly_error("Operation timed out after 30001 milliseconds with 0 bytes received"),
+            "The server stopped responding"
+        );
+        assert_eq!(friendly_error("HTTP 404 Not Found"), "The file is not on the server (HTTP 404)");
+        // Already friendly, as when read back from the history.
+        assert_eq!(friendly_error("Could not connect to 127.0.0.1:8783"), "Could not connect to 127.0.0.1:8783");
+    }
 
     #[test]
     fn names_come_from_the_last_path_segment() {

@@ -161,7 +161,9 @@ final class CardCellView: NSTableCellView {
         }
         let amount: String = switch task.status {
         case .complete: Format.size(task)
-        case _ where task.doneBytes == 0 && task.totalBytes == 0: "Not started"
+        // A failed download says why in its status; one still connecting has nothing yet.
+        case _ where task.doneBytes == 0 && task.totalBytes == 0:
+            task.status == .queued || task.status == .paused ? "Not started" : ""
         default: [percent, size].compactMap { $0 }.joined(separator: " · ")
         }
         amountText.setIfChanged(amount)
@@ -235,6 +237,10 @@ final class ListCellView: NSTableCellView {
         text.orientation = .vertical
         text.alignment = .leading
         text.spacing = 3
+        // A label's frame runs below its text, so equal gaps look uneven:
+        // more after the name, less before the detail.
+        text.setCustomSpacing(5, after: name)
+        text.setCustomSpacing(2, after: bar)
         for view in [icon, text, primaryButton, revealButton] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)

@@ -95,7 +95,7 @@ final class ProgressWindowController: NSWindowController, NSWindowDelegate, Down
             return
         }
         let percent = Format.percent(row)
-        window?.title = row.status == .complete ? "Download complete" : [percent, row.name].filter { !$0.isEmpty }.joined(separator: " ")
+        window?.title = row.status == .complete ? "Download Complete" : [percent, row.name].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     /// The segment map and connections, while the download runs.
@@ -205,7 +205,7 @@ struct DownloadProgressView: View {
             fact("Downloaded", [Format.amount(row), Format.percent(row)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
             // These rows stay while paused so the window keeps its height.
             fact("Speed", downloading ? Format.speed(row.speed) : "", always: true)
-            fact("Time left", downloading ? Format.eta(row.etaSecs) : "", always: true)
+            fact("Time left", downloading ? Format.timeLeft(row.etaSecs) : "", always: true)
             fact("Connections", downloading && row.connections > 0 ? "\(row.connections)" : "", always: true)
         }
         .font(.callout)
@@ -232,7 +232,7 @@ struct DownloadProgressView: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let segments = model.details?.segments, !segments.isEmpty {
-                SegmentBar(segments: [UInt8](segments))
+                SegmentBar(segments: [UInt8](segments), color: Color(nsColor: model.row.map { StatusLook.of($0).color } ?? .controlAccentColor))
                     .frame(height: 12)
                     .accessibilityLabel("Finished parts of the file")
                     .help("Finished parts of the file. Each connection fills its own part.")
@@ -261,8 +261,11 @@ struct DownloadProgressView: View {
             Button("Close") { act(.close) }
                 .keyboardShortcut(.cancelAction)
             Button("Show in Finder") { act(.reveal) }
+            // Prominent by hand: this panel never becomes key, so its default
+            // button would otherwise stay grey.
             Button("Open") { act(.open) }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
         .padding(.top, 10)
     }
@@ -307,6 +310,8 @@ struct StatusBar: View {
 /// The file in equal parts, each filled as far as it is downloaded.
 struct SegmentBar: View {
     let segments: [UInt8]
+    /// The progress bar's color, so a paused download's parts turn with it.
+    let color: Color
 
     var body: some View {
         Canvas { context, size in
@@ -314,7 +319,7 @@ struct SegmentBar: View {
             context.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 3), with: .color(.secondary.opacity(0.15)))
             for (index, done) in segments.enumerated() where done > 0 {
                 let rect = CGRect(x: CGFloat(index) * width, y: 0, width: width + 0.5, height: size.height)
-                context.fill(Path(rect), with: .color(.accentColor.opacity(0.25 + 0.75 * Double(done) / 100)))
+                context.fill(Path(rect), with: .color(color.opacity(0.25 + 0.75 * Double(done) / 100)))
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 3))

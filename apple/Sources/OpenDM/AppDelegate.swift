@@ -80,12 +80,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindowController.show(core: core)
     }
 
+    /// From the menu bar item, with or without the window open.
+    @objc func newDownload(_ sender: Any?) {
+        mainWindow?.newDownload(sender)
+    }
+
     @objc func pauseAll(_ sender: Any?) {
         core?.pauseAll()
     }
 
     @objc func resumeAll(_ sender: Any?) {
         core?.resumeAll()
+    }
+
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(pauseAll(_:)): store.rows.contains { $0.status == .downloading || $0.status == .queued }
+        case #selector(resumeAll(_:)): store.rows.contains { $0.status == .paused }
+        default: true
+        }
     }
 
     /// Lets installed browsers start the bundled opendm-host, which connects

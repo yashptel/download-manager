@@ -127,6 +127,17 @@ has "Refresh Download Address…" for one unfinished download
 
 ## Check on Windows too
 
+- **Wording the macOS app settled on.** Time left in the progress window
+  reads "4 min 47 sec", "2 hr 5 min", "3 days 4 hr"; the list says
+  "4 min left". A download with nothing yet says "Not started" only while
+  queued or paused; a failed one shows its error alone. The several-files
+  dialog says "1 of 1 file selected", its button "Start Downloads" for more
+  than one, and Select All / Select None turn off when they would change
+  nothing. The finished window is titled "Download Complete". Resume All
+  and Pause All in the tray menu are off when nothing would change, and the
+  menu has New Download…. The core now words connection errors itself
+  ("Could not connect to example.com:443", "Could not find the server
+  example.com", "The server stopped responding").
 - **Open at login and the tray.** General has an "Open at login" switch on
   macOS (it registers the app with `SMAppService`). On Windows, add the same
   switch: write `"<path to OpenDM.exe>" --background` to
