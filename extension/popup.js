@@ -36,8 +36,9 @@ function render(state) {
   $("capture-note").textContent = state.appCapture
     ? "Alt-click a link to download it in the browser instead."
     : "Turned off in OpenDM's settings.";
-  $("empty").hidden = state.mediaCount > 0;
-  if (state.mediaCount > 0 && !formatsAsked) {
+  const something = state.mediaCount > 0 || state.hasVideo;
+  $("empty").hidden = something;
+  if (something && !formatsAsked) {
     formatsAsked = true;
     loadFormats();
   }
@@ -61,6 +62,7 @@ async function loadFormats() {
     for (const option of group.options) list.append(optionRow(option));
   }
   $("empty").hidden = answer.groups.length > 0;
+  if (answer.note) $("empty").textContent = answer.note;
 }
 
 function optionRow(option) {

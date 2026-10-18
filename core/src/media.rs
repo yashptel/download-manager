@@ -12,12 +12,18 @@ use crate::{NewDownload, Shared};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
-/// Probe tasks have GIDs starting with this, so the task list skips them.
+/// Probes and other hidden tasks have GIDs starting with this, so the task
+/// list skips them.
 const PROBE_PREFIX: &str = "0bd0be";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub fn is_probe(gid: &str) -> bool {
     gid.starts_with(PROBE_PREFIX)
+}
+
+/// A GID for an engine task that stays out of the task list.
+pub fn hidden_gid() -> Result<String, String> {
+    Ok(format!("{PROBE_PREFIX}{}", random_hex(5)?))
 }
 
 /// The tracks of the presentation at `download.url`, for the extension's
@@ -27,7 +33,7 @@ pub async fn probe(shared: &Shared, download: &NewDownload) -> Result<Value, Str
         return Err("only HLS and DASH streams have tracks to choose".into());
     }
     let rpc = shared.wait_rpc().await?;
-    let gid = format!("{PROBE_PREFIX}{}", random_hex(5)?);
+    let gid = hidden_gid()?;
     let mut options = serde_json::Map::new();
     options.insert("gid".into(), json!(gid));
     options.insert(
@@ -39,7 +45,7 @@ pub async fn probe(shared: &Shared, download: &NewDownload) -> Result<Value, Str
 
     // A full queue would hold the probe back; it gets a slot of its own and
     // goes first in line. Once paused it no longer counts as active.
-    set_probe_slots(shared, &rpc, 1).await;
+    extra_slot(shared, &rpc, 1).await;
     let added = rpc
         .call(
             "aria2.addUri",
@@ -50,7 +56,7 @@ pub async fn probe(shared: &Shared, download: &NewDownload) -> Result<Value, Str
         Ok(_) => wait(&rpc, &gid).await,
         Err(error) => Err(error),
     };
-    set_probe_slots(shared, &rpc, -1).await;
+    extra_slot(shared, &rpc, -1).await;
     let _ = rpc.call("aria2.forceRemove", vec![json!(gid)]).await;
     let _ = rpc.call("aria2.removeDownloadResult", vec![json!(gid)]).await;
     result
@@ -120,7 +126,9 @@ fn tracks(media: &Value) -> Value {
     })
 }
 
-async fn set_probe_slots(shared: &Shared, rpc: &Rpc, change: i32) {
+/// Hidden tasks each get an engine slot of their own, so a full download
+/// queue does not hold them back.
+pub async fn extra_slot(shared: &Shared, rpc: &Rpc, change: i32) {
     let extra = {
         let mut slots = shared.probe_slots.lock().unwrap();
         *slots = slots.saturating_add_signed(change);
@@ -139,4 +147,3 @@ async fn set_probe_slots(shared: &Shared, rpc: &Rpc, change: i32) {
         )
         .await;
 }
-

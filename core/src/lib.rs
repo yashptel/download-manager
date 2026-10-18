@@ -10,6 +10,7 @@ mod engine;
 mod media;
 mod rpc;
 mod settings;
+mod sites;
 mod tasks;
 
 pub use settings::{CategoryRule, Settings};
@@ -207,6 +208,8 @@ pub(crate) struct Shared {
     pub browsers: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
     /// Stream probes running now; each gets an extra engine slot.
     pub probe_slots: Mutex<u32>,
+    /// Set while yt-dlp and Deno are being downloaded.
+    pub tools_busy: AtomicBool,
 }
 
 impl Shared {
@@ -283,6 +286,7 @@ impl DownloadCore {
             visible: AtomicBool::new(true),
             browsers: Mutex::new(Vec::new()),
             probe_slots: Mutex::new(0),
+            tools_busy: AtomicBool::new(false),
         });
         Ok(Arc::new(DownloadCore {
             runtime,

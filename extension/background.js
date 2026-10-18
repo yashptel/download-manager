@@ -470,11 +470,19 @@ function clearMedia(tabId) {
   if (media.delete(tabId)) showCount(tabId);
 }
 
-// A new page in the tab; a link that turns into a download is not one.
+// A new page in the tab, including a site that changes pages in script
+// (YouTube); a link that turns into a download does not change the URL.
+const tabPages = new Map(); // tabId → page URL without its #fragment
 api.tabs.onUpdated.addListener((tabId, change) => {
-  if (change.status === "loading" && change.url) clearMedia(tabId);
+  if (!change.url) return;
+  const page = change.url.split("#")[0];
+  if (tabPages.get(tabId) !== page) clearMedia(tabId);
+  tabPages.set(tabId, page);
 });
-api.tabs.onRemoved.addListener((tabId) => media.delete(tabId));
+api.tabs.onRemoved.addListener((tabId) => {
+  media.delete(tabId);
+  tabPages.delete(tabId);
+});
 
 /** The finds worth showing: what the page loaded, when it loaded a stream.
  * A player that loaded a master playlist also loads one of its quality
@@ -508,9 +516,14 @@ function titleName(title, kind) {
 /** What the app needs to fetch this find again, as the page did. */
 async function mediaItem(tab, entry) {
   const url = entry.page ?? entry.url;
-  const item = await requestItem(url, { referrer: tab?.url ?? "", headers: entry.headers, storeId: tab?.cookieStoreId });
-  const headers = entry.headers.filter((h) => ["origin", "authorization"].includes(h.name.toLowerCase()) || /^x-/i.test(h.name));
-  const filename = titleName(tab?.title, entry.kind);
+  // yt-dlp's finds come with the headers the site wants; the app drops the
+  // ones the engine sets itself.
+  const seen = entry.site?.headers ?? entry.headers;
+  const item = await requestItem(url, { referrer: tab?.url ?? "", headers: seen, storeId: tab?.cookieStoreId });
+  const headers = entry.site
+    ? seen
+    : seen.filter((h) => ["origin", "authorization"].includes(h.name.toLowerCase()) || /^x-/i.test(h.name));
+  const filename = titleName(entry.site?.title || tab?.title, entry.kind);
   const stream = isStream(entry)
     ? { mediaKind: entry.kind.toLowerCase(), mediaManifest: entry.content || undefined }
     : {};
@@ -518,11 +531,99 @@ async function mediaItem(tab, entry) {
 }
 
 /** The stream's tracks, read by the app's engine; kept for a while. */
-async function inspect(tab, entry) {
-  if (entry.probe && Date.now() - entry.probe.at < PROBE_TTL) return entry.probe.answer;
-  const answer = await ask({ type: "inspect", item: await mediaItem(tab, entry) }, { timeoutMs: 40_000 });
-  entry.probe = { at: Date.now(), answer };
-  return answer;
+function inspect(tab, entry) {
+  if (entry.probe && Date.now() - entry.probe.at < PROBE_TTL) return entry.probe.promise;
+  const promise = mediaItem(tab, entry).then((item) => ask({ type: "inspect", item }, { timeoutMs: 40_000 }));
+  entry.probe = { at: Date.now(), promise };
+  promise.catch(() => entry.probe?.promise === promise && (entry.probe = null));
+  return promise;
+}
+
+// ─── Sites through yt-dlp ────────────────────────────────────────────────
+//
+// Sites like YouTube never show the browser a playlist or file. The app
+// asks yt-dlp about the page, with this browser's cookies for the site so
+// that what the user can watch is what yt-dlp can see.
+
+const sites = new Map(); // page URL → { at, ttl, promise }
+const SITE_TTL = 10 * 60_000;
+
+/** "youtube.com" for "www.youtube.com", "bbc.co.uk" for "www.bbc.co.uk". */
+function siteDomain(host) {
+  const parts = host.split(".");
+  const keep = parts.length > 2 && parts.at(-1).length === 2 && parts.at(-2).length <= 3 ? 3 : 2;
+  return parts.slice(-keep).join(".");
+}
+
+async function siteCookies(tab) {
+  try {
+    const domain = siteDomain(new URL(tab.url).hostname);
+    const cookies = await api.cookies.getAll(tab.cookieStoreId ? { domain, storeId: tab.cookieStoreId } : { domain });
+    return cookies.slice(0, 500).map(({ domain, hostOnly, path, secure, expirationDate, name, value }) => ({
+      domain, hostOnly, path, secure, expirationDate, name, value,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** yt-dlp's videos for the tab's page, looked up once and kept a while. */
+function siteLookup(tab) {
+  const url = tab?.url ?? "";
+  if (!/^https?:/i.test(url)) return Promise.resolve([]);
+  const cached = sites.get(url);
+  if (cached && Date.now() - cached.at < cached.ttl) return cached.promise;
+  const record = { at: Date.now(), ttl: SITE_TTL };
+  record.promise = siteCookies(tab)
+    .then((cookies) => ask({ type: "site", url, cookies }, { timeoutMs: 120_000 }))
+    .then((answer) => {
+      if (answer.result !== "ready") {
+        if (answer.retry) record.ttl = 0;
+        throw new Error(answer.reason || "yt-dlp could not read this page");
+      }
+      return answer.videos;
+    });
+  // A failure is kept briefly: a page yt-dlp does not know stays unknown,
+  // but OpenDM may simply have been starting.
+  record.promise.catch(() => (record.ttl = Math.min(record.ttl, 30_000)));
+  sites.set(url, record);
+  if (sites.size > 50) sites.delete(sites.keys().next().value);
+  return record.promise;
+}
+
+const hasCodec = (codec) => Boolean(codec) && codec !== "none";
+
+/** Adds yt-dlp's playlists and files to the tab's finds. */
+function addSiteVideo(tabId, video) {
+  const title = video.title || "";
+  for (const stream of video.streams) {
+    addMedia(tabId, { url: stream.url, kind: stream.kind.toUpperCase(), loaded: true, site: { title, headers: stream.headers } });
+  }
+  // "-drc" files are the same audio with its loudness evened out.
+  const files = video.files.filter((file) => !String(file.id).endsWith("-drc") && file.ext);
+  const muxed = files.filter((f) => hasCodec(f.vcodec) === hasCodec(f.acodec) && !(f.vcodec === "none" && f.acodec === "none"));
+  const audio = files.filter((f) => !hasCodec(f.vcodec) && hasCodec(f.acodec));
+  // A video file without sound needs its audio muxed in, which the engine
+  // only does for playlists; offered only when nothing better exists.
+  const silent = video.streams.length || muxed.length ? [] : files.filter((f) => hasCodec(f.vcodec) && f.acodec === "none");
+  const bestAudio = Object.values(Object.groupBy(audio, (f) => f.ext)).map((list) => list.sort((a, b) => (b.tbr ?? 0) - (a.tbr ?? 0))[0]);
+  const add = (file, group, label, detail) =>
+    addMedia(tabId, {
+      url: file.url,
+      kind: file.ext.toUpperCase(),
+      size: file.size ?? 0,
+      loaded: true,
+      site: { title, headers: file.headers, group, label, detail, height: file.height ?? 0 },
+    });
+  const quality = (f) => (f.height ? f.height + "p" + (f.fps > 31 ? Math.round(f.fps) : "") : f.ext.toUpperCase());
+  for (const f of [...muxed, ...silent]) {
+    const detail = [f.ext.toUpperCase(), codecName(f.vcodec || "", "video"), formatSize(f.size)].filter(Boolean).join(" · ");
+    add(f, muxed.includes(f) ? "Video" : "Video (no sound)", quality(f), detail);
+  }
+  for (const f of bestAudio) {
+    const detail = [f.tbr ? Math.round(f.tbr) + " kbps" : "", codecName(f.acodec, "audio"), formatSize(f.size)].filter(Boolean).join(" · ");
+    add(f, "Audio only", "Audio · " + f.ext.toUpperCase(), detail);
+  }
 }
 
 // ─── Quality menu ────────────────────────────────────────────────────────
@@ -565,9 +666,10 @@ function formatSize(bytes) {
 
 const kbps = (bandwidth) => Math.round(bandwidth / 1000) + " kbps";
 
-/** MP4 plays everywhere; codecs it cannot carry go into MKV. */
+/** MP4 plays everywhere; the engine writes WebM-family codecs (VP9, AV1,
+ * Opus, ...) correctly only into MKV. */
 function containerFor(codecs) {
-  return /vp8|vorbis|theora/i.test(codecs) ? "mkv" : "mp4";
+  return /vp0?[89]|av01|opus|vorbis|theora/i.test(codecs) ? "mkv" : "mp4";
 }
 
 function streamName(url) {
@@ -623,13 +725,27 @@ function streamGroups(entry, presentation) {
 /** Everything the tab's video menu offers. src is the hovered video's own URL. */
 async function formats(tabId, src) {
   const tab = await api.tabs.get(tabId).catch(() => null);
+  // yt-dlp first, since it adds finds. With finds from the page already in
+  // hand, a slow answer is not worth waiting long for.
+  const ownFinds = visibleMedia(tabId).length > 0;
+  let siteNote = "";
+  const site = siteLookup(tab).catch((error) => {
+    siteNote = error.message;
+    return [];
+  });
+  const videos = await Promise.race([site, new Promise((resolve) => setTimeout(() => resolve([]), ownFinds ? 4000 : 120_000))]);
+  for (const video of videos) addSiteVideo(tabId, video);
+
   const list = [...visibleMedia(tabId)].reverse(); // Newest first.
   if (src && /^https?:/i.test(src) && !list.some((entry) => entry.url === src)) {
     const kind = mediaKind(src, "") || "MP4";
     addMedia(tabId, { url: src, kind, loaded: true });
     list.unshift(media.get(tabId).find((entry) => entry.url === src));
   }
-  const files = list.filter((entry) => !isStream(entry)).sort((a, b) => (b.url === src) - (a.url === src) || b.size - a.size).slice(0, 6);
+  const files = list
+    .filter((entry) => !isStream(entry))
+    .sort((a, b) => Boolean(b.site) - Boolean(a.site) || (b.url === src) - (a.url === src) || (b.site?.height ?? 0) - (a.site?.height ?? 0) || b.size - a.size)
+    .slice(0, 12);
 
   const probe = (entries) =>
     Promise.all(
@@ -657,30 +773,32 @@ async function formats(tabId, src) {
     .sort((a, b) => Boolean(b.entry.loaded) - Boolean(a.entry.loaded) || qualities(b) - qualities(a));
 
   const groups = [];
+  const addTo = (title, options) => {
+    const group = groups.find((g) => g.title === title);
+    if (group) group.options.push(...options);
+    else if (options.length) groups.push({ title, options });
+  };
   shown.forEach((p, index) => {
     const own = streamGroups(p.entry, p.answer.presentation);
-    if (index === 0) groups.push(...own);
-    else groups.push({ title: "Another stream · " + hostOf(p.entry.url), options: own.flatMap((g) => g.options) });
+    if (index === 0) own.forEach((g) => addTo(g.title, g.options));
+    else addTo("Another stream · " + hostOf(p.entry.url), own.flatMap((g) => g.options));
   });
   const failed = probed.find((p) => p.answer.result !== "ready");
   if (!shown.length && failed) {
     // The engine could not read it here; it may still download.
-    groups.push({
-      title: "Stream",
-      options: [{ label: "Best quality", detail: failed.entry.kind + " · " + (failed.answer.reason || "qualities unknown"), choice: { url: failed.entry.url, video: "best", audio: "best" } }],
-    });
+    addTo("Stream", [
+      { label: "Best quality", detail: failed.entry.kind + " · " + (failed.answer.reason || "qualities unknown"), choice: { url: failed.entry.url, video: "best", audio: "best" } },
+    ]);
   }
-  if (files.length) {
-    groups.push({
-      title: "Files",
-      options: files.map((entry) => ({
-        label: entry.kind,
-        detail: [formatSize(entry.size), streamName(entry.url)].filter(Boolean).join(" · "),
-        choice: { url: entry.url },
-      })),
-    });
+  for (const entry of files) {
+    const option = entry.site
+      ? { label: entry.site.label, detail: entry.site.detail, choice: { url: entry.url } }
+      : { label: entry.kind, detail: [formatSize(entry.size), streamName(entry.url)].filter(Boolean).join(" · "), choice: { url: entry.url } };
+    addTo(entry.site?.group ?? "Files", [option]);
   }
-  return { title: tab?.title ?? "", groups };
+  // Why nothing was found, when yt-dlp knows and the page is one it handles.
+  const note = groups.length || /unsupported url/i.test(siteNote) ? "" : siteNote;
+  return { title: tab?.title ?? "", groups, note };
 }
 
 async function downloadChoice(tabId, choice) {
@@ -725,6 +843,10 @@ async function onMessage(message, sender) {
       const tabId = message.tabId ?? sender.tab?.id;
       return { ok: true, ...(await formats(tabId, message.src)) };
     }
+    case "prefetch":
+      // Hovering a video: look the page up before the click, if OpenDM runs.
+      if (sender.tab && app.state === "connected") formats(sender.tab.id).catch(() => {});
+      return { ok: true };
     case "download-choice":
       await downloadChoice(message.tabId ?? sender.tab?.id, message.choice);
       return { ok: true };
@@ -740,6 +862,9 @@ async function onMessage(message, sender) {
         appCapture: settings.rules.capture,
         lastError,
         mediaCount: visibleMedia(message.tabId).length,
+        hasVideo: await api.scripting
+          .executeScript({ target: { tabId: message.tabId, allFrames: true }, func: () => Boolean(document.querySelector("video")) })
+          .then((results) => results.some((result) => result.result), () => false),
         hostAccess: await api.permissions.contains({ origins: ["<all_urls>"] }),
       };
     }

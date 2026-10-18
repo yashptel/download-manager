@@ -12,7 +12,8 @@
 //! downloading, so a download is never lost.
 //!
 //! "inspect" reads a stream's video and audio tracks for the extension's
-//! quality menu. It takes a moment, so it runs beside the other messages.
+//! quality menu, and "site" asks yt-dlp what a page offers. Both take a
+//! moment, so they run beside the other messages.
 
 use crate::{BrowserSource, EngineState, NewDownload, Shared};
 use serde_json::{Value, json};
@@ -125,10 +126,18 @@ async fn connection<S: AsyncRead + AsyncWrite + Send + 'static>(shared: Arc<Shar
         let Ok(message) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        if message["type"] == "inspect" {
+        if message["type"] == "hello" {
+            // A browser with the extension: video sites will be asked for.
+            crate::sites::prepare(shared.clone());
+        }
+        if message["type"] == "inspect" || message["type"] == "site" {
             let (shared, sender) = (shared.clone(), sender.clone());
             tokio::spawn(async move {
-                let mut answer = inspect(&shared, &message).await;
+                let mut answer = if message["type"] == "site" {
+                    site(&shared, &message).await
+                } else {
+                    inspect(&shared, &message).await
+                };
                 answer["id"] = message["id"].clone();
                 let _ = sender.send(answer.to_string());
             });
@@ -225,6 +234,18 @@ async fn inspect(shared: &Shared, message: &Value) -> Value {
     match crate::media::probe(shared, &download).await {
         Ok(presentation) => json!({ "result": "ready", "presentation": presentation }),
         Err(reason) => json!({ "result": "failed", "reason": reason }),
+    }
+}
+
+async fn site(shared: &Arc<Shared>, message: &Value) -> Value {
+    let url = message["url"].as_str().unwrap_or("");
+    let cookies = message["cookies"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    match crate::sites::lookup(shared, url, cookies).await {
+        Ok(videos) => json!({ "result": "ready", "videos": videos }),
+        Err(reason) => {
+            let retry = reason == crate::sites::INSTALLING;
+            json!({ "result": "failed", "reason": reason, "retry": retry })
+        }
     }
 }
 

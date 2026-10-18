@@ -68,6 +68,7 @@
   let hideTimer = 0;
   let lastMove = 0;
   let busy = false;
+  let prefetched = "";
 
   function videoAt(x, y) {
     for (const video of videos) {
@@ -166,6 +167,10 @@
   function show(video) {
     if (!host || !host.isConnected) build();
     if (menu && video !== current) closeMenu();
+    if (prefetched !== location.href) {
+      prefetched = location.href;
+      send({ type: "prefetch" });
+    }
     current = video;
     place();
     host.style.display = "block";
@@ -205,14 +210,14 @@
     busy = false;
     label("Download video");
     if (!answer?.ok) return flash(answer?.error || "OpenDM is not available", 3500);
-    openMenu(answer.groups ?? []);
+    openMenu(answer.groups ?? [], answer.note);
   }
 
-  function openMenu(groups) {
+  function openMenu(groups, note) {
     menu = element("div", "menu");
     menu.setAttribute("role", "menu");
     if (!groups.some((group) => group.options.length)) {
-      menu.append(element("div", "note", "No video found yet. Play it for a moment, then try again."));
+      menu.append(element("div", "note", note || "No video found yet. Play it for a moment, then try again."));
     }
     for (const group of groups) {
       if (group.title) menu.append(element("div", "group", group.title));

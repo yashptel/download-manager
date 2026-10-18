@@ -29,7 +29,15 @@ starts.
   estimated size), audio-only tracks, and plain files. The toolbar popup
   shows the same list. The qualities come from OpenDM's engine, which reads
   the playlist; the chosen tracks are downloaded and muxed into MP4 (or MKV
-  for codecs MP4 cannot carry), named after the page title.
+  for VP9, AV1 and Opus), named after the page title.
+- **Sites through yt-dlp.** For sites that never show the browser a file or
+  playlist (YouTube streams through its own protocol), OpenDM asks yt-dlp
+  about the page, sending this browser's cookies for the site so logged-in
+  and age-restricted videos work. Its playlists and files join the same
+  menu. The lookup starts when you hover a video, so the menu is usually
+  ready by the click. OpenDM downloads yt-dlp and Deno (which yt-dlp needs
+  for YouTube) into its data folder once the extension first connects, and
+  lets yt-dlp update itself daily.
 - **Starts OpenDM** in the background when there is something to hand over
   and it is not running. Opening the browser alone never starts it.
 
@@ -65,6 +73,7 @@ repeats.
 | `{ type: "hello", start, browser, version }` | `{ type: "hello", app, version, rules }`. The first message on a port; with `start: false` the host answers `{ type: "error", code: "not-running" }` instead of starting OpenDM. |
 | `{ type: "download", source, items: [...] }` | `{ result: "accepted" }` or `{ result: "fallback", reason }`. `source` is `download`, `link`, `links` or `media`; each item has `url` and optionally `referrer`, `cookie`, `userAgent`, `filename`, `filenameSource` (`browser`, `title` or `suggested`), `mime`, `size` and `headers`. |
 | `{ type: "inspect", item }` | `{ result: "ready", presentation: { live, durationMs, tracks: [{ id, type, language, codec, width, height, bandwidth, frameRate }] } }` or `{ result: "failed", reason }`. `item` is a stream item as below. The app has its engine read the playlist with a hidden task that it removes again. |
+| `{ type: "site", url, cookies }` | `{ result: "ready", videos: [{ title, duration, site, streams: [{ url, kind, headers }], files: [{ id, url, ext, vcodec, acodec, height, fps, tbr, size, language, headers }] }] }` or `{ result: "failed", reason, retry }`. yt-dlp's view of the page; `cookies` are the browser's cookies for the site. `retry` is set while yt-dlp is still being downloaded. |
 | (pushed by the app) | `{ type: "rules", rules: { capture, extensions, excludedSites, minSize } }` whenever the settings change. |
 
 Stream items add `mediaKind` (`hls` or `dash`), optionally `mediaManifest` (the
