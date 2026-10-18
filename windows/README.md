@@ -62,6 +62,25 @@ the app with many live downloads.
 | `TrayIcon.cs` | Notification-area icon (H.NotifyIcon) |
 | `Format.cs`, `Native.cs` | Formatting, links, Win32 helpers |
 
+## List styles (to port from macOS)
+
+The macOS app lets the user pick one of three list designs; the choice is
+remembered and List is the default. The Windows app currently has only the
+Columns table. Add the other two as alternative item templates on the same
+virtualized list, switched by a three-way toggle in the toolbar and
+Ctrl+1 / Ctrl+2 / Ctrl+3, saved in local settings:
+
+| Style | Row height | Contents |
+| --- | --- | --- |
+| Cards | 104 | Card with a 10 px corner radius, inset 10 px from the sides and 4 px top and bottom, 1 px separator border. 36 px file icon; semibold name; status line in the status color with its symbol, plus speed and time left while downloading (failed rows show the error); full-width 5 px bar; "40% · 82 MB / 209 MB". A pill of Pause/Resume/Retry/Open, Show in folder, Copy address and Remove buttons at the top right. Selection is an accent outline. |
+| List | 54 | 32 px icon; name; a 4 px bar only while unfinished; detail line such as "82 MB of 209.7 MB · 258 KB/s · 8 min left", in red with the error for failed rows. Two fixed button slots at the trailing edge: pause/resume/retry, and show in folder (finished rows, or on hover). |
+| Columns | 26 | The existing table. Status shows a colored symbol and a short word ("Failed", with the error as a tooltip); progress, speed and time left only while they mean something. |
+
+Status colors: downloading uses the accent color, paused orange, completed
+green, failed red, queued a tertiary gray. The macOS sources are
+`apple/Sources/OpenDM/RowCells.swift` (Cards and List) and `Cells.swift`
+(Columns). Recheck the 5,000-row test in each style.
+
 ## Things to verify first
 
 - **Compile errors** in XAML and C#, especially the generated bindings

@@ -1,7 +1,8 @@
 import AppKit
 
-/// The three list designs being compared. Switch with the toolbar control or
-/// View > as Cards / as List / as Columns (⌘1–⌘3).
+/// The user's choice of list design: roomy cards, a compact native list, or
+/// an IDM-style table. Switch with the toolbar control or View > as Cards /
+/// as List / as Columns (⌘1–⌘3); the choice is remembered.
 enum ListStyle: Int, CaseIterable {
     case cards, list, columns
 
@@ -30,7 +31,10 @@ enum ListStyle: Int, CaseIterable {
     }
 
     static var saved: ListStyle {
-        get { ListStyle(rawValue: UserDefaults.standard.integer(forKey: "ListStyle")) ?? .cards }
+        get {
+            guard let raw = UserDefaults.standard.object(forKey: "ListStyle") as? Int else { return .list }
+            return ListStyle(rawValue: raw) ?? .list
+        }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "ListStyle") }
     }
 }
