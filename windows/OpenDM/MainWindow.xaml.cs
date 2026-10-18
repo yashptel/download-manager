@@ -169,7 +169,8 @@ public sealed partial class MainWindow : Window
             Content = title,
             Icon = new FontIcon { Glyph = glyph },
             Tag = itemFilter,
-            InfoBadge = new InfoBadge { Visibility = Visibility.Collapsed },
+            // Down 1 px, to the middle of the label's capitals.
+            InfoBadge = new InfoBadge { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 2, 0, 0) },
         };
         navItems[itemFilter] = item;
         Nav.MenuItems.Add(item);
