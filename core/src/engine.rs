@@ -84,6 +84,8 @@ async fn run_once(shared: &Arc<Shared>, shutdown: &mut tokio::sync::watch::Recei
     }
     shared.rpc.send_replace(Some(rpc.clone()));
     shared.set_engine_state(EngineState::Running);
+    let extra = shared.settings.lock().unwrap().extra_engine_options();
+    apply_extra_options(shared, &rpc, extra).await;
 
     let forward = tokio::spawn({
         let shared = shared.clone();
@@ -130,11 +132,14 @@ async fn launch(shared: &Shared, settings: &Settings) -> Result<(Child, Connecti
     let port = free_port()?;
     let secret = random_hex(16)?;
     let conf = dir.join("rpc.conf");
-    write_private(
-        &conf,
-        &format!("rpc-secret={secret}\nrpc-listen-port={port}\n"),
-    )
-    .map_err(|error| format!("Cannot write {}: {error}", conf.display()))?;
+    // The settings go in the private file as well: a proxy password would
+    // show in the process list on the command line.
+    let mut contents = format!("rpc-secret={secret}\nrpc-listen-port={port}\n");
+    for (key, value) in settings.engine_options() {
+        contents.push_str(&format!("{key}={value}\n"));
+    }
+    write_private(&conf, &contents)
+        .map_err(|error| format!("Cannot write {}: {error}", conf.display()))?;
     let stderr =
         std::fs::File::create(dir.join("stderr.log")).map_err(|error| error.to_string())?;
 
@@ -146,7 +151,6 @@ async fn launch(shared: &Shared, settings: &Settings) -> Result<(Child, Connecti
             "--rpc-listen-all=false",
             "--quiet=true",
             "--continue=true",
-            "--auto-file-renaming=true",
             "--auto-file-renaming-style=parentheses",
             "--save-session-interval=30",
             "--log-level=warn",
@@ -156,12 +160,6 @@ async fn launch(shared: &Shared, settings: &Settings) -> Result<(Child, Connecti
         .arg(format!("--input-file={}", session.display()))
         .arg(format!("--save-session={}", session.display()))
         .arg(format!("--log={}", dir.join("engine.log").display()))
-        .args(
-            settings
-                .engine_options()
-                .into_iter()
-                .map(|(key, value)| format!("--{key}={value}")),
-        )
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr)
@@ -244,6 +242,19 @@ pub fn random_hex(bytes: usize) -> Result<String, String> {
     let mut buffer = vec![0u8; bytes];
     getrandom::fill(&mut buffer).map_err(|error| error.to_string())?;
     Ok(buffer.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+/// The user's own aria2 options, applied to the running engine so that a
+/// mistake in them is reported rather than keeping the engine from starting.
+pub async fn apply_extra_options(shared: &Shared, rpc: &Rpc, options: Vec<(String, String)>) {
+    for (name, value) in options {
+        let option = serde_json::json!({ name.clone(): value });
+        if let Err(error) = rpc.call("aria2.changeGlobalOption", vec![option]).await {
+            shared
+                .listener
+                .error(format!("The engine did not accept the option {name}: {error}"));
+        }
+    }
 }
 
 fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {

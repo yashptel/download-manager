@@ -722,6 +722,13 @@ pub async fn add(
         options.insert("dir".into(), json!(task.row.dir));
         options.insert("pause".into(), json!(start_paused.to_string()));
         download.engine_options(&mut options);
+        // The user's own headers come first; the site's may repeat a name.
+        let custom = settings.header_lines();
+        if !custom.is_empty() {
+            let own: Vec<Value> = options.remove("header").map(into_list).unwrap_or_default();
+            let all: Vec<Value> = custom.into_iter().map(Value::from).chain(own).collect();
+            options.insert("header".into(), Value::Array(all));
+        }
         calls.push((id, json!([url]), Value::Object(options)));
         new_tasks.push(task);
     }

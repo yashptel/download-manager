@@ -9,11 +9,12 @@ mod db;
 mod engine;
 mod media;
 mod rpc;
+mod schedule;
 mod settings;
 mod sites;
 mod tasks;
 
-pub use settings::{CategoryRule, Settings};
+pub use settings::{CategoryRule, FileExists, Schedule, Settings};
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -340,6 +341,7 @@ impl DownloadCore {
         *supervisor = Some(self.runtime.spawn(engine::supervise(self.shared.clone())));
         self.runtime.spawn(tasks::run_poller(self.shared.clone()));
         self.runtime.spawn(browser::serve(self.shared.clone()));
+        self.runtime.spawn(schedule::run(self.shared.clone()));
     }
 
     /// Saves progress and stops the engine. Blocks for at most a few seconds.
@@ -477,16 +479,22 @@ impl DownloadCore {
             .into_iter()
             .map(|(key, value)| (key.to_string(), value.into()))
             .collect();
-        *self.shared.settings.lock().unwrap() = settings;
+        let extra = settings.extra_engine_options();
+        let extra_changed = {
+            let mut current = self.shared.settings.lock().unwrap();
+            let changed = current.engine_extra != settings.engine_extra;
+            *current = settings;
+            changed
+        };
         browser::push_rules(&self.shared);
         self.run(move |shared| async move {
-            match shared.current_rpc() {
-                Some(rpc) => rpc
-                    .call("aria2.changeGlobalOption", vec![options.into()])
-                    .await
-                    .map(|_| ()),
-                None => Ok(()), // Applied when the engine next starts.
+            // Without an engine, the settings apply when it next starts.
+            let Some(rpc) = shared.current_rpc() else { return Ok(()) };
+            rpc.call("aria2.changeGlobalOption", vec![options.into()]).await?;
+            if extra_changed {
+                engine::apply_extra_options(&shared, &rpc, extra).await;
             }
+            Ok(())
         });
         Ok(())
     }

@@ -56,6 +56,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindow?.show()
     }
 
+    @objc func showSettings(_ sender: Any?) {
+        guard let core else { return }
+        SettingsWindowController.show(core: core)
+    }
+
     @objc func pauseAll(_ sender: Any?) {
         core?.pauseAll()
     }

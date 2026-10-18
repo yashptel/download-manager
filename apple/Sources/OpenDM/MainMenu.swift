@@ -9,6 +9,8 @@ enum MainMenu {
         main.addItem(submenu("OpenDM", [
             item("About OpenDM", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
+            item("Settings…", #selector(AppDelegate.showSettings(_:)), ","),
+            .separator(),
             item("Hide OpenDM", #selector(NSApplication.hide(_:)), "h"),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
             item("Show All", #selector(NSApplication.unhideAllApplications(_:))),

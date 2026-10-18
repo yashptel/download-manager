@@ -26,6 +26,7 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
         menu.addItem(withTitle: "Resume All", action: #selector(AppDelegate.resumeAll(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Pause All", action: #selector(AppDelegate.pauseAll(_:)), keyEquivalent: "")
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Quit OpenDM", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
         store.addObserver(self)
