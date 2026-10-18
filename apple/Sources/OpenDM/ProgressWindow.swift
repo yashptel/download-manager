@@ -225,6 +225,7 @@ struct DownloadProgressView: View {
                     .keyboardShortcut(.defaultAction)
             }
         }
+        .padding(.top, 10)
     }
 
     @ViewBuilder
@@ -263,6 +264,7 @@ struct DownloadProgressView: View {
             Button("Open") { act(.open) }
                 .keyboardShortcut(.defaultAction)
         }
+        .padding(.top, 10)
     }
 
     @ViewBuilder

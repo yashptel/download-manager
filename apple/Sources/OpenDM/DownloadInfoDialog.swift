@@ -355,6 +355,7 @@ struct DownloadInfoView: View {
                 Button("Start Download") { finish(.start) }
                     .keyboardShortcut(.defaultAction)
             }
+            .padding(.top, 6)
         }
         .padding(20)
         .frame(width: 540)
@@ -492,6 +493,7 @@ struct BatchDownloadView: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.chosenCount == 0)
             }
+            .padding(.top, 10)
         }
         .padding(20)
         .frame(width: 620)

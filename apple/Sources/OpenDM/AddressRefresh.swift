@@ -130,6 +130,7 @@ struct WaitingForAddressView: View {
                 Button("Cancel", action: cancel)
                     .keyboardShortcut(.cancelAction)
             }
+            .padding(.top, 6)
         }
         .padding(20)
         .frame(width: 460)

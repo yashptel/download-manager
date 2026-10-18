@@ -236,6 +236,7 @@ struct LoginView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(user.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+            .padding(.top, 6)
         }
         .padding(20)
         .frame(width: 440)

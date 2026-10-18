@@ -526,6 +526,7 @@ private struct AddLoginSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(SiteLogins.normalize(site).isEmpty || user.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+            .padding(.top, 8)
         }
         .padding(20)
         .frame(width: 420)
