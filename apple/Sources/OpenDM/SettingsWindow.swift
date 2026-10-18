@@ -38,6 +38,7 @@ final class SettingsWindowController: NSWindowController {
         tabs.addTabViewItem(tab("Browser", "globe", BrowserSettings()))
         tabs.addTabViewItem(tab("Categories", "folder", CategorySettings()))
         tabs.addTabViewItem(tab("Connection", "network", ConnectionSettings()))
+        tabs.addTabViewItem(tab("Logins", "key", LoginSettings()))
         tabs.addTabViewItem(tab("Scheduler", "calendar.badge.clock", SchedulerSettings()))
         tabs.addTabViewItem(tab("Engine", "terminal", EngineSettings()))
         let window = NSWindow(contentViewController: tabs)
@@ -428,6 +429,106 @@ private struct CategoryRow: View {
             }
             .frame(width: Self.folderWidth)
         }
+    }
+}
+
+/// IDM's Site Logins: user names and passwords for sites that ask (HTTP
+/// 401), kept in the keychain.
+private struct LoginSettings: View {
+    @State private var logins = SiteLogins.all()
+    @State private var selection: SiteLogin.ID?
+    @State private var adding = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("Site").frame(width: 300, alignment: .leading)
+                Text("User name")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            List(logins, selection: $selection) { login in
+                HStack(spacing: 10) {
+                    Text(login.site).frame(width: 300, alignment: .leading).lineLimit(1).truncationMode(.middle)
+                    Text(login.user).lineLimit(1)
+                }
+            }
+            .listStyle(.bordered(alternatesRowBackgrounds: true))
+            .frame(height: 200)
+            .overlay {
+                if logins.isEmpty {
+                    Text("No saved logins").foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 6) {
+                Button { adding = true } label: { Image(systemName: "plus").frame(width: 16, height: 16) }
+                    .help("Add a login")
+                Button {
+                    if let login = logins.first(where: { $0.id == selection }) { SiteLogins.remove(login) }
+                    selection = nil
+                    logins = SiteLogins.all()
+                } label: { Image(systemName: "minus").frame(width: 16, height: 16) }
+                    .help("Remove the selected login")
+                    .disabled(selection == nil)
+                Spacer()
+            }
+            Note("When a site asks for a user name and password, OpenDM uses the login saved for it, or asks and offers to remember it. A site can include a path, such as example.com/private, to cover only that part. Passwords are kept in your keychain.")
+                .padding(.top, 4)
+        }
+        .padding(20)
+        .frame(width: tabWidth + 80)
+        .sheet(isPresented: $adding) {
+            AddLoginSheet { login, password in
+                do {
+                    try SiteLogins.save(login, password: password)
+                } catch {
+                    NSAlert(error: error).runModal()
+                }
+                logins = SiteLogins.all()
+            }
+        }
+    }
+}
+
+private struct AddLoginSheet: View {
+    let save: (SiteLogin, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var site = ""
+    @State private var user = ""
+    @State private var password = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add a Login").font(.headline)
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 10) {
+                GridRow {
+                    Text("Site:").gridColumnAlignment(.trailing)
+                    TextField("example.com or example.com/private", text: $site).labelsHidden()
+                }
+                GridRow {
+                    Text("User name:")
+                    TextField("User name", text: $user).labelsHidden()
+                }
+                GridRow {
+                    Text("Password:")
+                    SecureField("Password", text: $password).labelsHidden()
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Add") {
+                    save(SiteLogin(site: SiteLogins.normalize(site), user: user.trimmingCharacters(in: .whitespaces)), password)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(SiteLogins.normalize(site).isEmpty || user.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }
 

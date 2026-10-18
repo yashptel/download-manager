@@ -32,6 +32,8 @@ final class DownloadStore {
     var onError: ((String) -> Void)?
     /// Downloads the browser extension handed over.
     var onBrowserDownloads: (([NewDownload], BrowserSource) -> Void)?
+    /// A server wants a user name and password for a download (ID, URL).
+    var onLoginNeeded: ((String, String) -> Void)?
 
     private struct WeakObserver { weak var value: DownloadStoreObserver? }
     private var observers: [WeakObserver] = []
@@ -111,6 +113,9 @@ private final class Listener: CoreListener, @unchecked Sendable {
     func error(message: String) { onMain { $0.report(message) } }
     func browserDownloads(downloads: [NewDownload], source: BrowserSource) {
         onMain { $0.onBrowserDownloads?(downloads, source) }
+    }
+    func loginNeeded(id: String, url: String) {
+        onMain { $0.onLoginNeeded?(id, url) }
     }
 
     private func onMain(_ body: @escaping @MainActor (DownloadStore) -> Void) {

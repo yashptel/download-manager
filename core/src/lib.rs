@@ -196,6 +196,10 @@ pub trait CoreListener: Send + Sync {
     /// user, or starts them with `add_downloads`. The browser has already
     /// dropped its own copy.
     fn browser_downloads(&self, downloads: Vec<NewDownload>, source: BrowserSource);
+    /// The server answered the download `id` with 401 and fresh browser
+    /// cookies did not help: it wants a user name and password. The app
+    /// tries a saved login or asks, then calls `set_login`.
+    fn login_needed(&self, id: String, url: String);
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -425,6 +429,12 @@ impl DownloadCore {
             category,
             dir,
         }
+    }
+
+    /// Restarts a download the server refused (401) with a user name and
+    /// password, sent as HTTP Basic or Digest as the server asks.
+    pub fn set_login(&self, id: String, user: String, password: String) {
+        self.run(move |shared| async move { tasks::set_login(&shared, &id, &user, &password).await });
     }
 
     /// Saves a download under another folder or name than the one it started

@@ -108,8 +108,9 @@ pub struct Table {
     /// Captured downloads started before the app has taken them; they stay
     /// out of the list until the server's first answer says it can.
     held: HashSet<String>,
-    /// Failed with 401 or 403; the poller asks the browser for new cookies.
-    refused: HashSet<String>,
+    /// Failed with 401 or 403 (the value): the poller asks the browser for
+    /// new cookies, then the user for a login.
+    refused: HashMap<String, u16>,
     stats: GlobalStats,
 }
 
@@ -162,8 +163,8 @@ pub async fn run_poller(shared: Arc<Shared>) {
             let _ = tick(&shared, &rpc).await;
         }
         let refused = std::mem::take(&mut shared.tasks.lock().unwrap().refused);
-        for id in refused {
-            tokio::spawn(retry_with_fresh_cookies(shared.clone(), id));
+        for (id, status) in refused {
+            tokio::spawn(after_refusal(shared.clone(), id, status));
         }
     }
 }
@@ -322,17 +323,14 @@ async fn apply(
                 .or_insert_with(|| Task::new(id.to_string(), String::new(), String::new(), now));
             let before = task.row.clone();
             update_from_engine(task, status, &settings, now);
-            let refused = status["errorMessage"]
-                .as_str()
-                .is_some_and(|message| message.starts_with("HTTP 401") || message.starts_with("HTTP 403"));
-            let retry = task.row.status == TaskStatus::Failed
-                && before.status != TaskStatus::Failed
-                && refused
-                && !task.media
-                && !task.cookies_refreshed;
-            if retry {
-                task.cookies_refreshed = true;
+            let refused = match status["errorMessage"].as_str() {
+                Some(message) if message.starts_with("HTTP 401") => Some(401),
+                Some(message) if message.starts_with("HTTP 403") => Some(403),
+                _ => None,
             }
+            .filter(|_| {
+                task.row.status == TaskStatus::Failed && before.status != TaskStatus::Failed && !task.media
+            });
             if task.row != before || is_new {
                 changed.push(task.row.clone());
                 if is_new || task.row.status != before.status || task.row.name != before.name {
@@ -347,8 +345,8 @@ async fn apply(
                     }
                 }
             }
-            if retry {
-                table.refused.insert(id.to_string());
+            if let Some(code) = refused {
+                table.refused.insert(id.to_string(), code);
             }
         }
         for id in missing {
@@ -1032,6 +1030,8 @@ const KEPT_OPTIONS: &[&str] = &[
     "filename-hint",
     "filename-hint-source",
     "header",
+    "http-user",
+    "http-passwd",
     "referer",
     "user-agent",
     "media",
@@ -1075,34 +1075,66 @@ async fn restart(rpc: &Rpc, task: &Task, options: serde_json::Map<String, Value>
         .await
 }
 
-/// After a 401 or 403, asks the browser which cookies it would send now and,
-/// when they differ from the download's, restarts it with them once. IDM
-/// does the same ("Change cookies, try again"): a session can expire or
-/// rotate between the click and the download, or while it waits paused.
-async fn retry_with_fresh_cookies(shared: Arc<Shared>, id: String) {
+/// After a 401 or 403: fresh browser cookies first, once until the user
+/// starts the download again; then, for a 401, a user name and password.
+async fn after_refusal(shared: Arc<Shared>, id: String, status: u16) {
     let Some(task) = select(&shared, std::slice::from_ref(&id), |task| task.row.status == TaskStatus::Failed).pop()
     else {
         return;
     };
-    let Some(cookie) = crate::browser::fresh_cookies(&shared, &task.row.url).await else {
+    let first = {
+        let mut table = shared.tasks.lock().unwrap();
+        table.tasks.get_mut(&id).is_some_and(|task| !std::mem::replace(&mut task.cookies_refreshed, true))
+    };
+    if first && retry_with_fresh_cookies(&shared, &task).await {
         return;
+    }
+    if status == 401 {
+        shared.listener.login_needed(id, task.row.url);
+    }
+}
+
+/// Asks the browser which cookies it would send now and, when they differ
+/// from the download's, restarts it with them. IDM does the same ("Change
+/// cookies, try again"): a session can expire or rotate between the click
+/// and the download, or while it waits paused. True when it restarted.
+async fn retry_with_fresh_cookies(shared: &Shared, task: &Task) -> bool {
+    let Some(cookie) = crate::browser::fresh_cookies(shared, &task.row.url).await else {
+        return false;
     };
     let Some(rpc) = shared.current_rpc() else {
-        return;
+        return false;
     };
-    let mut options = readd_options(&rpc, &task).await;
+    let mut options = readd_options(&rpc, task).await;
     let mut headers: Vec<Value> = options.remove("header").map(into_list).unwrap_or_default();
     let is_cookie = |line: &Value| line.as_str().is_some_and(|line| line.to_ascii_lowercase().starts_with("cookie:"));
     let fresh = format!("Cookie: {cookie}");
     if headers.iter().any(|line| line.as_str() == Some(fresh.as_str())) {
-        return; // The browser has nothing newer.
+        return false; // The browser has nothing newer.
     }
     headers.retain(|line| !is_cookie(line));
     headers.push(json!(fresh));
     options.insert("header".into(), Value::Array(headers));
-    if restart(&rpc, &task, options).await.is_ok() {
-        finish_action(&shared, &rpc, std::slice::from_ref(&task)).await;
+    let restarted = restart(&rpc, task, options).await.is_ok();
+    if restarted {
+        finish_action(shared, &rpc, std::slice::from_ref(task)).await;
     }
+    restarted
+}
+
+/// Restarts a refused download with a login. The engine sends it as HTTP
+/// Basic, or Digest when the server asks for that.
+pub async fn set_login(shared: &Shared, id: &str, user: &str, password: &str) -> Result<(), String> {
+    let rpc = shared.wait_rpc().await?;
+    let Some(task) = select(shared, &[id.to_string()], |task| task.row.status == TaskStatus::Failed).pop() else {
+        return Ok(());
+    };
+    let mut options = readd_options(&rpc, &task).await;
+    options.insert("http-user".into(), json!(user));
+    options.insert("http-passwd".into(), json!(password));
+    restart(&rpc, &task, options).await?;
+    finish_action(shared, &rpc, std::slice::from_ref(&task)).await;
+    Ok(())
 }
 
 pub async fn pause_all(shared: &Shared) -> Result<(), String> {

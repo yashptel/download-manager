@@ -55,6 +55,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
 struct Recorder {
     states: Mutex<Vec<EngineState>>,
     errors: Mutex<Vec<String>>,
+    logins: Mutex<Vec<(String, String)>>,
 }
 
 impl CoreListener for Recorder {
@@ -68,6 +69,9 @@ impl CoreListener for Recorder {
         self.errors.lock().unwrap().push(message);
     }
     fn browser_downloads(&self, _downloads: Vec<NewDownload>, _source: BrowserSource) {}
+    fn login_needed(&self, id: String, url: String) {
+        self.logins.lock().unwrap().push((id, url));
+    }
 }
 
 /// Byte `i` of every served file.
@@ -95,6 +99,8 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
     let mut end = FILE_SIZE - 1;
     let mut ranged = false;
     let mut is_head = false;
+    let mut private = false;
+    let mut authorized = false;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line)? == 0 {
@@ -107,6 +113,13 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
         if line.starts_with("HEAD ") {
             is_head = true;
         }
+        if line.contains(" /private/") {
+            private = true;
+        }
+        // u:p
+        if line.eq_ignore_ascii_case("authorization: basic dTpw") {
+            authorized = true;
+        }
         if let Some(range) = line.to_ascii_lowercase().strip_prefix("range: bytes=") {
             let (from, to) = range.split_once('-').unwrap_or((range, ""));
             start = from.parse().unwrap_or(0);
@@ -115,6 +128,11 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
             }
             ranged = true;
         }
+    }
+    if private && !authorized {
+        return stream.write_all(
+            b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"test\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
     }
     let length = end - start + 1;
     let head = if ranged {
@@ -295,4 +313,41 @@ fn survives_an_engine_crash_and_an_app_restart() {
 
     let errors = recorder.errors.lock().unwrap();
     assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+}
+
+#[test]
+fn a_refused_download_asks_for_a_login_and_finishes_with_it() {
+    let Some(engine) = engine_path() else {
+        eprintln!("skipped: no aria2-next binary (run scripts/fetch-engine.sh)");
+        return;
+    };
+    let port = serve();
+    let temp = tempfile::tempdir().unwrap();
+    let downloads = temp.path().join("downloads");
+    let recorder = Arc::new(Recorder::default());
+    let core = open(&engine, &temp.path().join("data"), &downloads, recorder.clone());
+    core.start();
+    wait_until("engine start", Duration::from_secs(15), || {
+        core.engine_state() == EngineState::Running
+    });
+
+    let url = format!("http://127.0.0.1:{port}/private/secret.bin");
+    core.add_urls(vec![url.clone()], false);
+    wait_until("the login request", Duration::from_secs(15), || {
+        !recorder.logins.lock().unwrap().is_empty()
+    });
+    let (id, asked_for) = recorder.logins.lock().unwrap()[0].clone();
+    assert_eq!(asked_for, url);
+    let failed = row(&core, &id).unwrap();
+    assert_eq!(failed.status, TaskStatus::Failed);
+    assert_eq!(failed.error.as_deref(), Some("The server asks for a login (HTTP 401)"));
+
+    core.set_login(id.clone(), "u".into(), "p".into());
+    wait_until("completion with the login", Duration::from_secs(60), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Complete)
+    });
+    let path = PathBuf::from(row(&core, &id).unwrap().path.unwrap());
+    assert_eq!(std::fs::read(&path).unwrap().len() as u64, FILE_SIZE);
+    assert_eq!(recorder.logins.lock().unwrap().len(), 1, "asked once");
+    core.shutdown();
 }

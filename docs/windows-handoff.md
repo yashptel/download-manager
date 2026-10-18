@@ -86,6 +86,27 @@ and Fluent styling, dark mode, keyboard access.
      (`settings.engineExtra`); the core reports options the engine rejects
      through the listener's `Error`.
 
+## Logins for sites that ask (HTTP 401)
+
+`CoreListener` has a new method, `LoginNeeded(id, url)`, so the Windows
+listener must implement it. The core calls it after a 401 that fresh browser
+cookies did not fix. The macOS app (`SiteLogins.swift`):
+
+- Tries the saved login whose site covers the URL (same host; a site such
+  as `example.com/private` also needs the path to start with `/private`;
+  the longest match wins), once per download, with
+  `core.SetLogin(id, user, password)`. The engine sends it as Basic or
+  Digest, whichever the server asks for.
+- Otherwise, or when that login failed, shows "Login Required": "<host>
+  asks for a user name and password", the file name, User name, Password,
+  "Remember for <host>" (on by default), Cancel and Log In. One dialog per
+  download at a time; Cancel leaves it failed.
+- Keeps saved logins in the system credential store, never in the settings
+  file: on Windows, Credential Manager (`CredWrite`/`CredRead`/
+  `CredEnumerate` with a target such as `OpenDM site login:<site>:<user>`).
+- Settings gets a Logins tab between Connection and Scheduler: Site and User
+  name columns, + (site, user name, password) and −.
+
 ## Check on Windows too
 
 - **Open at login and the tray.** General has an "Open at login" switch on

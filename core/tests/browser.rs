@@ -55,6 +55,7 @@ impl CoreListener for Recorder {
     fn browser_downloads(&self, downloads: Vec<NewDownload>, source: BrowserSource) {
         self.handed.lock().unwrap().push((downloads, source));
     }
+    fn login_needed(&self, _id: String, _url: String) {}
 }
 
 /// Serves a small file, or a one-segment playlist for any .m3u8 path, and

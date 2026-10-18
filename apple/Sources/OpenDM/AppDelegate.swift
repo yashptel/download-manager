@@ -26,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.load(from: core)
         ProgressWindowController.store = store
         NewDownloads.store = store
+        store.onLoginNeeded = { [weak self] id, url in
+            guard let core = self?.core else { return }
+            LoginPrompt.handle(id: id, url: url, core: core)
+        }
         store.onBrowserDownloads = { [weak self] downloads, _ in
             guard let core = self?.core else { return }
             NewDownloads.present(downloads, core: core)
