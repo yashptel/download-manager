@@ -10,12 +10,13 @@ use crate::db::progress;
 use crate::engine::random_hex;
 use crate::rpc::Rpc;
 use crate::settings::{OTHER_CATEGORY, Settings};
-use crate::{ConnectionInfo, FileInfo, GlobalStats, NewDownload, Shared, TaskDetails, TaskRow, TaskStatus};
+use crate::{ConnectionInfo, GlobalStats, NewDownload, Shared, TaskDetails, TaskRow, TaskStatus};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 const VISIBLE_INTERVAL: Duration = Duration::from_millis(500);
 const BACKGROUND_INTERVAL: Duration = Duration::from_secs(2);
@@ -56,6 +57,10 @@ pub struct Task {
     pub files: Vec<String>,
     /// An HLS/DASH presentation; progress comes from media time, not bytes.
     pub media: bool,
+    /// A folder and name chosen after the download started. A running
+    /// download cannot move, so it moves there when it completes.
+    pub move_dir: Option<String>,
+    pub move_name: Option<String>,
 }
 
 impl Task {
@@ -81,6 +86,8 @@ impl Task {
             },
             files: Vec::new(),
             media: false,
+            move_dir: None,
+            move_name: None,
         }
     }
 }
@@ -94,6 +101,9 @@ pub struct Table {
     dirty: HashSet<String>,
     /// GIDs being removed; engine answers about them are ignored.
     removing: HashSet<String>,
+    /// Captured downloads started before the app has taken them; they stay
+    /// out of the list until the server's first answer says it can.
+    held: HashSet<String>,
     stats: GlobalStats,
 }
 
@@ -177,10 +187,11 @@ async fn tick(shared: &Shared, rpc: &Rpc) -> Result<(), String> {
             active_ids
                 .iter()
                 .filter(|id| {
-                    table
-                        .tasks
-                        .get(*id)
-                        .is_none_or(|task| task.files.is_empty())
+                    !table.held.contains(*id)
+                        && table
+                            .tasks
+                            .get(*id)
+                            .is_none_or(|task| task.files.is_empty())
                 })
                 .cloned(),
         );
@@ -278,12 +289,13 @@ async fn apply(
     let mut removed = Vec::new();
     let mut persist = Vec::new();
     let mut purge = Vec::new();
+    let mut moves = Vec::new();
     let mut new_stats = None;
     {
         let mut table = shared.tasks.lock().unwrap();
         for status in statuses {
             let Some(id) = gid(status) else { continue };
-            if table.removing.contains(id) || crate::media::is_probe(id) {
+            if table.removing.contains(id) || table.held.contains(id) || crate::media::is_probe(id) {
                 continue;
             }
             if status["status"] == "removed" {
@@ -309,6 +321,9 @@ async fn apply(
                 if task.row.status == TaskStatus::Complete && before.status != TaskStatus::Complete
                 {
                     purge.push(id.to_string());
+                    if task.move_dir.is_some() || task.move_name.is_some() {
+                        moves.push(id.to_string());
+                    }
                 }
             }
         }
@@ -357,6 +372,9 @@ async fn apply(
     }
     if !removed.is_empty() {
         shared.listener.rows_removed(removed);
+    }
+    for id in moves {
+        move_finished(shared, &id);
     }
     if let Some(stats) = new_stats {
         shared.listener.stats_changed(stats);
@@ -423,6 +441,9 @@ fn update_from_engine(task: &mut Task, status: &Value, settings: &Settings, now:
         row.name = base_name(first).to_string();
         row.path = Some(first.clone());
     }
+    if let Some(name) = &task.move_name {
+        row.name = name.clone();
+    }
 
     let media = status.get("media").filter(|media| media.is_object());
     if let Some(media) = media {
@@ -451,7 +472,7 @@ fn update_from_engine(task: &mut Task, status: &Value, settings: &Settings, now:
                         .as_str()
                         .filter(|message| !message.is_empty())
                 })
-                .map(String::from)
+                .map(friendly_error)
                 .or_else(|| row.error.clone())
                 .unwrap_or_else(|| "Download failed".into()),
         ),
@@ -635,48 +656,6 @@ fn segment_map(bitfield: &str, pieces: usize, cells: usize) -> Vec<u8> {
         .collect()
 }
 
-/// What a download will be before it starts: its name and size from the
-/// server (as the browser would see them), its category and folder.
-pub async fn inspect(shared: &Shared, download: &NewDownload) -> Result<FileInfo, String> {
-    let settings = shared.settings.lock().unwrap().clone();
-    let mut info = FileInfo {
-        name: download.planned_name(),
-        size: download.size,
-        mime: download.mime.clone(),
-        resumable: None,
-        category: String::new(),
-        dir: String::new(),
-    };
-    // A stream's size is only known once it is downloaded.
-    if download.media_kind.is_none() {
-        let rpc = shared.wait_rpc().await?;
-        let mut options = serde_json::Map::new();
-        download.request_options(&mut options);
-        let answer = rpc
-            .call("aria2.probe", vec![json!(download.url.trim()), Value::Object(options)])
-            .await?;
-        let status = number(&answer, "status").unwrap_or(0);
-        if status >= 400 {
-            return Err(match status {
-                401 | 403 => format!("The server refused OpenDM (HTTP {status})"),
-                404 | 410 => format!("The file is not on the server (HTTP {status})"),
-                _ => format!("The server answered HTTP {status}"),
-            });
-        }
-        let named = matches!(download.filename_source.as_deref(), Some("browser" | "user"));
-        if let Some(name) = answer["filename"].as_str().filter(|name| !name.is_empty() && !named) {
-            info.name = name.to_string();
-        }
-        info.size = number(&answer, "totalLength").filter(|size| *size > 0).or(info.size);
-        if let Some(mime) = answer["contentType"].as_str().filter(|mime| !mime.is_empty()) {
-            info.mime = Some(mime.to_string());
-        }
-        info.resumable = answer["resumable"].as_str().map(|value| value == "true");
-    }
-    (info.category, info.dir) = download.place(&settings, &info.name);
-    Ok(info)
-}
-
 pub async fn add_urls(
     shared: &Shared,
     urls: Vec<String>,
@@ -696,6 +675,213 @@ pub fn with_ids(downloads: Vec<NewDownload>) -> Result<Vec<(String, NewDownload)
         .collect()
 }
 
+/// The row and engine options of a new download.
+fn prepare(
+    settings: &Settings,
+    id: String,
+    download: &NewDownload,
+    start_paused: bool,
+    added_at: i64,
+) -> (Task, Value) {
+    let mut task = Task::new(id, download.url.trim().to_string(), String::new(), added_at);
+    task.row.name = download.planned_name();
+    (task.row.category, task.row.dir) = download.place(settings, &task.row.name);
+    if start_paused {
+        task.row.status = TaskStatus::Paused;
+    }
+    let mut options = serde_json::Map::new();
+    options.insert("gid".into(), json!(task.row.id));
+    options.insert("dir".into(), json!(task.row.dir));
+    options.insert("pause".into(), json!(start_paused.to_string()));
+    download.engine_options(&mut options);
+    // The user's own headers come first; the site's may repeat a name.
+    let custom = settings.header_lines();
+    if !custom.is_empty() {
+        let own: Vec<Value> = options.remove("header").map(into_list).unwrap_or_default();
+        let all: Vec<Value> = custom.into_iter().map(Value::from).chain(own).collect();
+        options.insert("header".into(), Value::Array(all));
+    }
+    (task, Value::Object(options))
+}
+
+/// Starts a captured download before the app takes it, out of the list, so
+/// the server is asked only once: its first answer decides whether the app
+/// takes the download, and the same request carries on as the download.
+pub async fn start_held(shared: &Shared, id: String, download: &NewDownload) -> Result<Task, String> {
+    let rpc = shared.wait_rpc().await?;
+    let settings = shared.settings.lock().unwrap().clone();
+    let added_at = shared.tasks.lock().unwrap().next_added_at(now_ms());
+    let (task, options) = prepare(&settings, id.clone(), download, false, added_at);
+    shared.tasks.lock().unwrap().held.insert(id.clone());
+    let added = rpc
+        .call("aria2.addUri", vec![json!([download.url.trim()]), options])
+        .await;
+    if let Err(error) = added {
+        shared.tasks.lock().unwrap().held.remove(&id);
+        return Err(error);
+    }
+    Ok(task)
+}
+
+/// Waits for the server's first answer to a held download: the reason when
+/// it refused, or Ok once data comes, or once `limit` has passed.
+pub async fn first_answer(shared: &Shared, id: &str, limit: Duration) -> Result<(), String> {
+    let rpc = shared.wait_rpc().await?;
+    let started = Instant::now();
+    while started.elapsed() < limit {
+        let status = rpc
+            .call(
+                "aria2.tellStatus",
+                vec![json!(id), json!(["status", "totalLength", "completedLength", "errorMessage"])],
+            )
+            .await?;
+        let data = number(&status, "totalLength").unwrap_or(0) > 0
+            || number(&status, "completedLength").unwrap_or(0) > 0;
+        match status["status"].as_str() {
+            Some("error") => {
+                let message = status["errorMessage"].as_str().unwrap_or("The download failed");
+                return Err(friendly_error(message));
+            }
+            Some("complete" | "removed") => return Ok(()),
+            _ if data => return Ok(()),
+            _ => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    }
+    Ok(())
+}
+
+/// Puts a held download in the list: the app has taken it.
+pub async fn release(shared: &Shared, task: Task) {
+    let id = task.row.id.clone();
+    insert(shared, std::slice::from_ref(&task));
+    {
+        let mut table = shared.tasks.lock().unwrap();
+        table.held.remove(&id);
+        table.mark_dirty(id);
+    }
+    if let Some(rpc) = shared.current_rpc() {
+        let _ = rpc.call("aria2.saveSession", vec![]).await;
+    }
+    shared.wake.notify_one();
+}
+
+/// Drops a held download the server refused. A refused request wrote no file.
+pub async fn discard(shared: &Shared, id: &str) {
+    if let Some(rpc) = shared.current_rpc() {
+        let _ = rpc.call("aria2.forceRemove", vec![json!(id)]).await;
+        let _ = rpc.call("aria2.removeDownloadResult", vec![json!(id)]).await;
+    }
+    shared.tasks.lock().unwrap().held.remove(id);
+}
+
+/// Saves a download under another folder or name (None keeps the current
+/// one). It moves there when it completes, or now if it already has.
+pub fn set_destination(shared: &Shared, id: &str, dir: Option<String>, name: Option<String>) {
+    let settings = shared.settings.lock().unwrap().clone();
+    let task = {
+        let mut table = shared.tasks.lock().unwrap();
+        let Some(task) = table.tasks.get_mut(id) else {
+            return;
+        };
+        task.move_dir = dir.map(|dir| dir.trim().to_string()).filter(|dir| !dir.is_empty());
+        task.move_name = name.map(|name| name.trim().to_string()).filter(|name| !name.is_empty());
+        if let Some(name) = &task.move_name {
+            task.row.name = name.clone();
+            task.row.category = settings.classify(name);
+        }
+        task.clone()
+    };
+    if task.row.status == TaskStatus::Complete {
+        move_finished(shared, id);
+        return;
+    }
+    if let Err(error) = shared.db.lock().unwrap().save(std::slice::from_ref(&task)) {
+        shared.listener.error(format!("Could not save download history: {error}"));
+    }
+    shared.listener.rows_changed(vec![task.row]);
+}
+
+/// Moves a finished download to the folder and name chosen for it.
+fn move_finished(shared: &Shared, id: &str) {
+    let Some(mut task) = shared.tasks.lock().unwrap().tasks.get(id).cloned() else {
+        return;
+    };
+    let dir = task.move_dir.take();
+    let name = task.move_name.take();
+    if let Some(from) = task.row.path.clone().or_else(|| task.files.first().cloned()) {
+        let from = PathBuf::from(from);
+        let to_dir = dir.map(PathBuf::from).or_else(|| from.parent().map(Path::to_path_buf)).unwrap_or_default();
+        let to_name = name.unwrap_or_else(|| base_name(&from.display().to_string()).to_string());
+        let to = to_dir.join(&to_name);
+        if to != from {
+            match move_file(&from, &to) {
+                Ok(moved) => {
+                    let path = moved.display().to_string();
+                    task.row.name = base_name(&path).to_string();
+                    task.row.dir = to_dir.display().to_string();
+                    task.row.path = Some(path.clone());
+                    task.files = vec![path];
+                }
+                Err(error) => shared.listener.error(format!(
+                    "Could not move {} to {}: {error}",
+                    from.display(),
+                    to.display()
+                )),
+            }
+        }
+    }
+    shared.tasks.lock().unwrap().tasks.insert(id.to_string(), task.clone());
+    if let Err(error) = shared.db.lock().unwrap().save(std::slice::from_ref(&task)) {
+        shared.listener.error(format!("Could not save download history: {error}"));
+    }
+    shared.listener.rows_changed(vec![task.row]);
+}
+
+/// Renames, or copies to another disk, never over a file already there.
+/// Returns where the file ended up.
+fn move_file(from: &Path, to: &Path) -> std::io::Result<PathBuf> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let to = free_path(to);
+    match std::fs::rename(from, &to) {
+        Ok(()) => Ok(to),
+        Err(error) if error.kind() == std::io::ErrorKind::CrossesDevices => {
+            std::fs::copy(from, &to)?;
+            std::fs::remove_file(from)?;
+            Ok(to)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// `to`, or "name (2).ext" and so on when it is taken.
+fn free_path(to: &Path) -> PathBuf {
+    if !to.exists() {
+        return to.to_path_buf();
+    }
+    let stem = to.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
+    let extension = to.extension().map(|ext| format!(".{}", ext.to_string_lossy())).unwrap_or_default();
+    (2..)
+        .map(|n| to.with_file_name(format!("{stem} ({n}){extension}")))
+        .find(|candidate| !candidate.exists())
+        .unwrap()
+}
+
+/// The engine's "HTTP 403" in words.
+pub fn friendly_error(message: &str) -> String {
+    let status = message
+        .strip_prefix("HTTP ")
+        .and_then(|rest| rest.get(..3))
+        .and_then(|code| code.parse::<u16>().ok());
+    match status {
+        Some(401) => "The server asks for a login (HTTP 401)".into(),
+        Some(403) => "The server refused the download (HTTP 403)".into(),
+        Some(code @ (404 | 410)) => format!("The file is not on the server (HTTP {code})"),
+        _ => message.to_string(),
+    }
+}
+
 /// Starts downloads under their IDs.
 pub async fn add(
     shared: &Shared,
@@ -708,32 +894,9 @@ pub async fn add(
     let mut new_tasks = Vec::new();
     let mut calls = Vec::new();
     for (index, (id, download)) in downloads.into_iter().enumerate() {
-        let url = download.url.trim();
         // Offset by the index so a pasted list keeps its order.
-        let mut task = Task::new(
-            id.clone(),
-            url.to_string(),
-            String::new(),
-            start + index as i64,
-        );
-        task.row.name = download.planned_name();
-        (task.row.category, task.row.dir) = download.place(&settings, &task.row.name);
-        if start_paused {
-            task.row.status = TaskStatus::Paused;
-        }
-        let mut options = serde_json::Map::new();
-        options.insert("gid".into(), json!(task.row.id));
-        options.insert("dir".into(), json!(task.row.dir));
-        options.insert("pause".into(), json!(start_paused.to_string()));
-        download.engine_options(&mut options);
-        // The user's own headers come first; the site's may repeat a name.
-        let custom = settings.header_lines();
-        if !custom.is_empty() {
-            let own: Vec<Value> = options.remove("header").map(into_list).unwrap_or_default();
-            let all: Vec<Value> = custom.into_iter().map(Value::from).chain(own).collect();
-            options.insert("header".into(), Value::Array(all));
-        }
-        calls.push((id, json!([url]), Value::Object(options)));
+        let (task, options) = prepare(&settings, id.clone(), &download, start_paused, start + index as i64);
+        calls.push((id, json!([download.url.trim()]), options));
         new_tasks.push(task);
     }
     if new_tasks.is_empty() {
@@ -870,7 +1033,7 @@ pub async fn resume_all(shared: &Shared) -> Result<(), String> {
 }
 
 pub async fn remove(shared: &Shared, ids: Vec<String>, delete_files: bool) -> Result<(), String> {
-    let targets = select(shared, &ids, |_| true);
+    let mut targets = select(shared, &ids, |_| true);
     if targets.is_empty() {
         return Ok(());
     }
@@ -895,7 +1058,10 @@ pub async fn remove(shared: &Shared, ids: Vec<String>, delete_files: bool) -> Re
                     .collect(),
             )
             .await;
-        // A removed task must stop before its result can be dropped and its files deleted.
+        // A removed task must stop before its result can be dropped and its
+        // files deleted. Its file paths come along: a download removed just
+        // after it started may not have reported them yet.
+        let mut files: HashMap<String, Vec<String>> = HashMap::new();
         for _ in 0..60 {
             let answers = rpc
                 .multicall(
@@ -904,13 +1070,26 @@ pub async fn remove(shared: &Shared, ids: Vec<String>, delete_files: bool) -> Re
                         .map(|task| {
                             (
                                 "aria2.tellStatus",
-                                vec![json!(task.row.id), json!(["status"])],
+                                vec![json!(task.row.id), json!(["status", "files"])],
                             )
                         })
                         .collect(),
                 )
                 .await
                 .unwrap_or_default();
+            for (task, answer) in running.iter().zip(&answers) {
+                if let Ok(status) = answer {
+                    let paths: Vec<String> = into_list(status["files"].clone())
+                        .iter()
+                        .filter_map(|file| file["path"].as_str())
+                        .filter(|path| !path.is_empty())
+                        .map(native_path)
+                        .collect();
+                    if !paths.is_empty() {
+                        files.insert(task.row.id.clone(), paths);
+                    }
+                }
+            }
             let stopped = answers.iter().all(|answer| match answer {
                 Ok(status) => matches!(
                     status["status"].as_str(),
@@ -931,11 +1110,19 @@ pub async fn remove(shared: &Shared, ids: Vec<String>, delete_files: bool) -> Re
             )
             .await;
         let _ = rpc.call("aria2.saveSession", vec![]).await;
+        for task in &mut targets {
+            if task.files.is_empty()
+                && let Some(paths) = files.remove(&task.row.id)
+            {
+                task.files = paths;
+            }
+        }
     }
 
     if delete_files {
         for task in &targets {
-            for file in &task.files {
+            let controls: Vec<String> = task.files.iter().map(|file| format!("{file}.aria2")).collect();
+            for file in task.files.iter().chain(&controls) {
                 match std::fs::remove_file(file) {
                     Ok(()) => {}
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -1258,6 +1445,22 @@ mod tests {
         assert_eq!(task.row.total_bytes, 0);
         assert_eq!(task.row.eta_secs, None);
         assert_eq!(task.row.category, "Video");
+    }
+
+    #[test]
+    fn a_finished_file_moves_without_replacing_one_already_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("download.bin");
+        std::fs::write(&from, b"new").unwrap();
+        let wanted = dir.path().join("sub").join("report.pdf");
+        std::fs::create_dir_all(wanted.parent().unwrap()).unwrap();
+        std::fs::write(&wanted, b"old").unwrap();
+
+        let moved = move_file(&from, &wanted).unwrap();
+        assert_eq!(moved, dir.path().join("sub").join("report (2).pdf"));
+        assert_eq!(std::fs::read(&moved).unwrap(), b"new");
+        assert_eq!(std::fs::read(&wanted).unwrap(), b"old");
+        assert!(!from.exists());
     }
 
     #[test]

@@ -4,14 +4,19 @@ import SwiftUI
 
 /// Where new downloads go before they start: the Download File Info dialog
 /// for one, a list for several, or straight to the engine when the user
-/// turned confirmation off.
+/// turned confirmation off. A captured download may already be running
+/// (`taskId`): the core started it to hear the server's first answer.
 @MainActor
 enum NewDownloads {
+    /// Set at launch; the dialog follows its running download here.
+    static var store: DownloadStore?
+
     static func present(_ downloads: [NewDownload], core: DownloadCore) {
         guard !downloads.isEmpty else { return }
         guard core.settings().confirmDownloads else {
-            let ids = core.addDownloads(downloads: downloads, startPaused: false)
-            ProgressWindowController.show(ids: ids, core: core)
+            let running = downloads.compactMap(\.taskId)
+            let added = core.addDownloads(downloads: downloads.filter { $0.taskId == nil }, startPaused: false)
+            ProgressWindowController.show(ids: running + added, core: core)
             return
         }
         if downloads.count == 1 {
@@ -105,6 +110,10 @@ final class DownloadInfoModel: ObservableObject {
     @Published var checking = true
     @Published var problem: String?
     @Published var rememberFolder = false
+    /// The download, already running while the dialog asks about it, as IDM
+    /// does: the server is asked once. nil for streams and magnet links,
+    /// which start only when confirmed.
+    private(set) var taskId: String?
     /// What the user changed stays as they set it when the server answers.
     private(set) var nameEdited = false
     private(set) var categoryEdited = false
@@ -123,6 +132,17 @@ final class DownloadInfoModel: ObservableObject {
         category = plan.category
         folder = plan.dir
         size = plan.size
+        let scheme = download.url.lowercased()
+        if let running = download.taskId {
+            taskId = running
+        } else if download.mediaKind == nil, ["http://", "https://", "ftp://"].contains(where: scheme.hasPrefix) {
+            taskId = core.addDownloads(downloads: [download], startPaused: false).first
+        }
+        checking = taskId != nil
+        if let taskId, let store = NewDownloads.store {
+            store.addObserver(self)
+            if let row = store.row(taskId) { show(row) }
+        }
     }
 
     func setName(_ value: String) {
@@ -141,27 +161,28 @@ final class DownloadInfoModel: ObservableObject {
         folderChosen = true
     }
 
-    /// The server's name and size, as the browser would get them.
-    func check() {
-        let core = core
-        let download = download
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { try core.inspectDownload(download: download) }
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { self.checked(result) }
-            }
+    /// What the running download has learned: the server's name and size,
+    /// or why it failed.
+    fileprivate func show(_ row: TaskRow) {
+        if !nameEdited { name = row.name }
+        if !categoryEdited, !folderChosen, row.category != category {
+            category = row.category
+            folder = core.categoryDir(category: row.category)
         }
+        if row.totalBytes > 0 { size = row.totalBytes }
+        problem = row.status == .failed ? (row.error ?? "The download failed") : nil
+        checking = row.status != .failed && row.status != .complete && row.totalBytes == 0 && row.doneBytes == 0
     }
 
-    private func checked(_ result: Result<FileInfo, Error>) {
-        checking = false
-        switch result {
-        case .success(let info):
-            if !nameEdited { name = info.name }
-            if !categoryEdited, !folderChosen { category = info.category; folder = info.dir }
-            size = info.size ?? size
-        case .failure(let error):
-            problem = error.message
+    /// Sends the running download to the name and folder now in the dialog.
+    /// It moves there when it completes.
+    func applyDestination() {
+        guard let taskId, let row = NewDownloads.store?.row(taskId) else { return }
+        let typed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newName = nameEdited && !typed.isEmpty && typed != row.name ? typed : nil
+        let newFolder = folder != row.dir ? folder : nil
+        if newName != nil || newFolder != nil {
+            core.setDestination(id: taskId, dir: newFolder, name: newName)
         }
     }
 
@@ -198,6 +219,7 @@ final class DownloadInfoModel: ObservableObject {
 final class DownloadInfoController: ConfirmationPanelController {
     private let model: DownloadInfoModel
     private let core: DownloadCore
+    private var answered = false
 
     static func show(_ download: NewDownload, core: DownloadCore) {
         DownloadInfoController(download: download, core: core).present()
@@ -215,18 +237,39 @@ final class DownloadInfoController: ConfirmationPanelController {
         )
         super.init(title: "Download File Info", content: view)
         controller = self
-        model.check()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     private func finish(_ answer: DownloadInfoView.Answer) {
-        if answer != .cancel {
-            model.saveFolderForCategory()
+        answered = true
+        if answer != .cancel { model.saveFolderForCategory() }
+        if let id = model.taskId {
+            switch answer {
+            case .cancel:
+                core.remove(ids: [id], deleteFiles: true)
+            case .later:
+                core.pause(ids: [id])
+                model.applyDestination()
+            case .start:
+                model.applyDestination()
+                if model.problem != nil { core.resume(ids: [id]) }
+                ProgressWindowController.show(ids: [id], core: core)
+            }
+        } else if answer != .cancel {
             let ids = core.addDownloads(downloads: [model.confirmed], startPaused: answer == .later)
             if answer == .start { ProgressWindowController.show(ids: ids, core: core) }
         }
         close()
+    }
+
+    /// The close button is Cancel.
+    override func windowWillClose(_ notification: Notification) {
+        if !answered, let id = model.taskId {
+            answered = true
+            core.remove(ids: [id], deleteFiles: true)
+        }
+        super.windowWillClose(notification)
     }
 }
 
@@ -452,5 +495,12 @@ struct BatchDownloadView: View {
         }
         .padding(20)
         .frame(width: 620)
+    }
+}
+
+extension DownloadInfoModel: DownloadStoreObserver {
+    func store(_ store: DownloadStore, didChange changes: [RowChange]) {
+        guard let taskId, let change = changes.last(where: { $0.new.id == taskId }) else { return }
+        show(change.new)
     }
 }

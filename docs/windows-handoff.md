@@ -25,15 +25,30 @@ and Fluent styling, dark mode, keyboard access.
    category's folder into settings), Quality (videos only:
    `NewDownload.mediaQuality`), Address, and Start Download / Download Later /
    Cancel (Enter and Esc).
-   - Show it at once from `core.PlanDownload(download)`, then call
-     `core.InspectDownload(download)` on a background thread (it asks the
-     server, up to `20 s) and fill in the server's name and size unless the
-     user already changed them. On failure show the message in red.
+   - The download is already running while the dialog asks, as in IDM, so
+     the server is asked once. A captured download arrives with
+     `download.taskId` set (the core started it and waited for the
+     server's first answer; a refusal never reaches the app, the browser
+     keeps it). Any other http(s)/ftp download: call
+     `core.AddDownloads([download], startPaused: false)` when the dialog
+     opens and keep the ID. Streams and magnet links start only on Start.
+   - Show it at once from `core.PlanDownload(download)`, then follow the
+     task's row: its name (unless the user typed one), category and folder
+     (unless changed), size, and its error in red if it fails. While no
+     size or data has arrived, show "Checking…".
    - Changing the category moves the folder to `core.CategoryDir(category)`
      unless a folder was chosen.
-   - On Start: set `filename` and `filenameSource = "user"` only if the name
-     was edited, always set `category` and `dir` to what the dialog shows,
-     then `core.AddDownloads([download], startPaused: later)`.
+   - Start: if the typed name or the folder differs from the row, call
+     `core.SetDestination(id, dir, name)` (null for unchanged); the file
+     moves there when it completes. Resume it if it failed, then show the
+     progress window. Download Later: `core.Pause([id])` and the same
+     `SetDestination`. Cancel and the close button:
+     `core.Remove([id], deleteFiles: true)`.
+   - Without a running task (streams, magnets): on Start set `filename` and
+     `filenameSource = "user"` only if the name was edited, always set
+     `category` and `dir`, then `core.AddDownloads([download], startPaused: later)`.
+   - With confirmation off, downloads that have a `taskId` are already
+     running: only show their progress windows.
    - Several links handed over at once get a list dialog instead: checkboxes,
      name, address and category per file, Select All/None, "Save to: each
      file's category folder" or a chosen folder.

@@ -13,11 +13,16 @@
 //! refuses the app while it served the browser: some sites behind Cloudflare
 //! tell browsers from other clients by more than cookies.
 //!
+//! The app asks such a server only once, as IDM does: it starts the real
+//! download out of sight, and the first answer decides. Accepted, the
+//! download is already running when the dialog asks about it.
+//!
 //! "inspect" reads a stream's video and audio tracks for the extension's
 //! quality menu, and "site" asks yt-dlp what a page offers. Both take a
 //! moment, so they run beside the other messages.
 
-use crate::{BrowserSource, EngineState, NewDownload, Shared};
+use crate::engine::random_hex;
+use crate::{BrowserSource, EngineState, NewDownload, Shared, tasks};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
@@ -191,27 +196,41 @@ fn respond(shared: &Shared, message: &Value) -> Option<Value> {
             "version": env!("CARGO_PKG_VERSION"),
             "rules": rules(shared),
         })),
-        "download" => Some(match accept(shared, message) {
-            Ok(()) => json!({ "result": "accepted" }),
-            Err(reason) => json!({ "result": "fallback", "reason": reason }),
-        }),
+        "download" => Some(answer(accept(shared, message, None))),
         _ => None,
     }
 }
 
-/// A download the browser already started. The app takes it only when the
-/// server answers the app as well; otherwise the browser keeps it. A slow
-/// server gets the benefit of the doubt.
+/// A download the browser already started. The app starts it too and takes
+/// it once the server answers; a refusal leaves it to the browser. A server
+/// slower than `CAPTURE_CHECK` gets the benefit of the doubt.
 async fn capture(shared: &Shared, message: &Value) -> Value {
     let capturing = shared.settings.lock().unwrap().browser_capture && !engine_down(shared);
-    let download = message["items"].get(0).and_then(parse_item);
-    if let Some(download) = download.filter(|download| capturing && download.media_kind.is_none()) {
-        let check = tokio::time::timeout(CAPTURE_CHECK, crate::tasks::inspect(shared, &download)).await;
-        if let Ok(Err(reason)) = check {
+    let single = message["items"]
+        .as_array()
+        .filter(|items| items.len() == 1)
+        .and_then(|items| parse_item(&items[0]))
+        .filter(|download| capturing && download.media_kind.is_none());
+    let mut started = None;
+    if let Some(download) = single
+        && let Ok(id) = random_hex(8)
+        && let Ok(task) = tasks::start_held(shared, id.clone(), &download).await
+    {
+        if let Err(reason) = tasks::first_answer(shared, &id, CAPTURE_CHECK).await {
+            tasks::discard(shared, &id).await;
             return json!({ "result": "fallback", "reason": reason });
         }
+        tasks::release(shared, task).await;
+        started = Some(id);
     }
-    respond(shared, message).unwrap_or_else(|| json!({ "result": "fallback", "reason": "not a download" }))
+    answer(accept(shared, message, started))
+}
+
+fn answer(accepted: Result<(), String>) -> Value {
+    match accepted {
+        Ok(()) => json!({ "result": "accepted" }),
+        Err(reason) => json!({ "result": "fallback", "reason": reason }),
+    }
 }
 
 fn engine_down(shared: &Shared) -> bool {
@@ -221,8 +240,9 @@ fn engine_down(shared: &Shared) -> bool {
     )
 }
 
-/// Hands the downloads in `message` to the app, or says why it cannot take them.
-fn accept(shared: &Shared, message: &Value) -> Result<(), String> {
+/// Hands the downloads in `message` to the app, or says why it cannot take
+/// them. `started` is the ID the first one already runs under.
+fn accept(shared: &Shared, message: &Value, started: Option<String>) -> Result<(), String> {
     let source = match message["source"].as_str() {
         Some("download") => BrowserSource::Download,
         Some("link") => BrowserSource::Link,
@@ -236,7 +256,7 @@ fn accept(shared: &Shared, message: &Value) -> Result<(), String> {
     if engine_down(shared) {
         return Err("the download engine is not running".into());
     }
-    let downloads: Vec<NewDownload> = message["items"]
+    let mut downloads: Vec<NewDownload> = message["items"]
         .as_array()
         .map(|items| {
             items
@@ -248,6 +268,9 @@ fn accept(shared: &Shared, message: &Value) -> Result<(), String> {
         .unwrap_or_default();
     if downloads.is_empty() {
         return Err("no downloadable links".into());
+    }
+    if let Some(first) = downloads.first_mut() {
+        first.task_id = started;
     }
     shared.listener.browser_downloads(downloads, source);
     Ok(())
@@ -338,6 +361,7 @@ fn parse_item(item: &Value) -> Option<NewDownload> {
         media_format: text("mediaFormat").filter(|format| format == "mp4" || format == "mkv"),
         media_quality: text("mediaQuality").filter(|quality| quality.len() <= 200),
         category: None,
+        task_id: None,
     })
 }
 

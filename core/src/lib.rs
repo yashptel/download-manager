@@ -136,6 +136,10 @@ pub struct NewDownload {
     /// A category chosen by the user instead of the one the name implies.
     #[uniffi(default = None)]
     pub category: Option<String>,
+    /// Set when the download is already running under this ID: a captured
+    /// download the app started while asking the user about it.
+    #[uniffi(default = None)]
+    pub task_id: Option<String>,
 }
 
 /// A download as it will be, before it starts.
@@ -160,8 +164,6 @@ pub struct FileInfo {
     pub name: String,
     pub size: Option<u64>,
     pub mime: Option<String>,
-    /// Whether the server can continue an interrupted download, when known.
-    pub resumable: Option<bool>,
     pub category: String,
     /// The folder it is saved to.
     pub dir: String,
@@ -413,20 +415,15 @@ impl DownloadCore {
             name,
             size: download.size,
             mime: download.mime,
-            resumable: None,
             category,
             dir,
         }
     }
 
-    /// Like `plan_download`, with the name and size the server gives. Asks
-    /// the server with the browser's cookies and headers, so it can take a
-    /// few seconds: call it off the main thread.
-    pub fn inspect_download(&self, download: NewDownload) -> Result<FileInfo, CoreError> {
-        let shared = self.shared.clone();
-        Ok(self
-            .runtime
-            .block_on(async move { tasks::inspect(&shared, &download).await })?)
+    /// Saves a download under another folder or name than the one it started
+    /// with (None keeps it). A running download moves there when it completes.
+    pub fn set_destination(&self, id: String, dir: Option<String>, name: Option<String>) {
+        tasks::set_destination(&self.shared, &id, dir, name);
     }
 
     /// The folder downloads of `category` are saved to.

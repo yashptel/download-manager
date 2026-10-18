@@ -8,7 +8,7 @@ use crate::{TaskRow, TaskStatus};
 use rusqlite::{Connection, params};
 use std::path::Path;
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = "
 CREATE TABLE downloads (
@@ -25,7 +25,9 @@ CREATE TABLE downloads (
     added_at    INTEGER NOT NULL,
     finished_at INTEGER,
     files       TEXT NOT NULL,
-    media       INTEGER NOT NULL
+    media       INTEGER NOT NULL,
+    move_dir    TEXT,
+    move_name   TEXT
 );
 CREATE INDEX downloads_added_at ON downloads(added_at);
 ";
@@ -49,6 +51,16 @@ impl Db {
                     "BEGIN; {SCHEMA} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
                 ))
                 .map_err(|error| error.to_string())?,
+            // 2 adds the folder and name a running download moves to when done.
+            1 => conn
+                .execute_batch(
+                    "BEGIN;
+                     ALTER TABLE downloads ADD COLUMN move_dir TEXT;
+                     ALTER TABLE downloads ADD COLUMN move_name TEXT;
+                     PRAGMA user_version = 2;
+                     COMMIT;",
+                )
+                .map_err(|error| error.to_string())?,
             SCHEMA_VERSION => {}
             newer => {
                 return Err(format!(
@@ -64,7 +76,7 @@ impl Db {
             .conn
             .prepare(
                 "SELECT id, url, name, dir, path, category, status, total_bytes, done_bytes, error,
-                        added_at, finished_at, files, media
+                        added_at, finished_at, files, media, move_dir, move_name
                  FROM downloads ORDER BY added_at, id",
             )
             .map_err(|error| error.to_string())?;
@@ -97,6 +109,8 @@ impl Db {
                     row: row_data,
                     files: serde_json::from_str(&files).unwrap_or_default(),
                     media: row.get::<_, i64>(13)? != 0,
+                    move_dir: row.get(14)?,
+                    move_name: row.get(15)?,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -113,8 +127,8 @@ impl Db {
                 .prepare_cached(
                     "INSERT OR REPLACE INTO downloads
                      (id, url, name, dir, path, category, status, total_bytes, done_bytes, error,
-                      added_at, finished_at, files, media)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                      added_at, finished_at, files, media, move_dir, move_name)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 )
                 .map_err(|error| error.to_string())?;
             for task in tasks {
@@ -135,6 +149,8 @@ impl Db {
                         row.finished_at,
                         serde_json::to_string(&task.files).unwrap_or_else(|_| "[]".into()),
                         task.media as i64,
+                        task.move_dir,
+                        task.move_name,
                     ])
                     .map_err(|error| error.to_string())?;
             }
@@ -220,6 +236,32 @@ mod tests {
 
         db.delete(&["00000000000000a1".into()]).unwrap();
         assert_eq!(db.load().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn opens_a_first_release_history_and_keeps_its_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.db");
+        let v1 = SCHEMA.replace(",\n    move_dir    TEXT,\n    move_name   TEXT", "");
+        assert!(!v1.contains("move_dir"));
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(&format!("{v1} PRAGMA user_version = 1;")).unwrap();
+        conn.execute(
+            "INSERT INTO downloads VALUES ('00000000000000b1', 'https://example.com/x.zip', 'x.zip',
+             '/dl', NULL, 'Compressed', 'paused', 100, 40, NULL, 5, NULL, '[]', 0)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let mut db = Db::open(&path).unwrap();
+        let mut loaded = db.load().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].row.name, "x.zip");
+        assert_eq!(loaded[0].move_dir, None);
+        loaded[0].move_name = Some("renamed.zip".into());
+        db.save(&loaded).unwrap();
+        assert_eq!(db.load().unwrap()[0].move_name.as_deref(), Some("renamed.zip"));
     }
 
     #[test]
