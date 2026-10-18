@@ -6,4 +6,4 @@ license.workspace = true
 publish = false
 
 [dependencies]
-uniffi = { version = "0.32", features = ["cli"] }
+uniffi = { version = "0.31", features = ["cli"] }

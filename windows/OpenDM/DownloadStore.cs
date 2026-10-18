@@ -1,0 +1,109 @@
+using Microsoft.UI.Dispatching;
+
+namespace OpenDM;
+
+/// <param name="Old">The previous row, or null for a row new to the list.</param>
+internal readonly record struct RowChange(TaskRow? Old, DownloadItem Item);
+
+/// <summary>
+/// UI-thread copy of the task list. The core sends only the rows that
+/// changed; the store updates their items and tells the window what changed.
+/// </summary>
+internal sealed class DownloadStore
+{
+    private readonly Dictionary<string, DownloadItem> byId = new();
+    private readonly List<DownloadItem> items = new();
+
+    public DownloadStore(DispatcherQueue dispatcher)
+    {
+        Listener = new CoreEvents(this, dispatcher);
+    }
+
+    public CoreListener Listener { get; }
+
+    /// <summary>Oldest first.</summary>
+    public IReadOnlyList<DownloadItem> Items => items;
+
+    public GlobalStats Stats { get; private set; } = new(0, 0, 0, 0);
+
+    public EngineState EngineState { get; private set; } = new EngineState.Stopped();
+
+    public event Action<IReadOnlyList<RowChange>>? RowsChanged;
+    public event Action<IReadOnlySet<string>>? RowsRemoved;
+    public event Action? StatusChanged;
+    public event Action<string>? ErrorRaised;
+
+    public void Load(DownloadCore core)
+    {
+        items.Clear();
+        byId.Clear();
+        foreach (var row in core.Rows())
+        {
+            Add(row);
+        }
+        Stats = core.Stats();
+        EngineState = core.EngineState();
+    }
+
+    private DownloadItem Add(TaskRow row)
+    {
+        var item = new DownloadItem(row);
+        byId[row.Id] = item;
+        items.Add(item);
+        return item;
+    }
+
+    private void Apply(TaskRow[] rows)
+    {
+        var changes = new List<RowChange>(rows.Length);
+        foreach (var row in rows)
+        {
+            if (byId.TryGetValue(row.Id, out var item))
+            {
+                var old = item.Row;
+                item.Update(row);
+                changes.Add(new RowChange(old, item));
+            }
+            else
+            {
+                changes.Add(new RowChange(null, Add(row)));
+            }
+        }
+        RowsChanged?.Invoke(changes);
+    }
+
+    private void Remove(string[] ids)
+    {
+        var removed = ids.ToHashSet();
+        items.RemoveAll(item => removed.Contains(item.Id));
+        foreach (var id in ids)
+        {
+            byId.Remove(id);
+        }
+        RowsRemoved?.Invoke(removed);
+    }
+
+    /// <summary>Receives core events on a background thread and replays them, in order, on the UI thread.</summary>
+    private sealed class CoreEvents(DownloadStore store, DispatcherQueue dispatcher) : CoreListener
+    {
+        public void RowsChanged(TaskRow[] rows) => Post(() => store.Apply(rows));
+
+        public void RowsRemoved(string[] ids) => Post(() => store.Remove(ids));
+
+        public void StatsChanged(GlobalStats stats) => Post(() =>
+        {
+            store.Stats = stats;
+            store.StatusChanged?.Invoke();
+        });
+
+        public void EngineStateChanged(EngineState state) => Post(() =>
+        {
+            store.EngineState = state;
+            store.StatusChanged?.Invoke();
+        });
+
+        public void Error(string message) => Post(() => store.ErrorRaised?.Invoke(message));
+
+        private void Post(Action action) => dispatcher.TryEnqueue(() => action());
+    }
+}

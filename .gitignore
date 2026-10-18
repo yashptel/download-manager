@@ -5,4 +5,10 @@
 /apple/.swiftpm/
 /apple/Frameworks/
 /apple/Sources/OpenDMCore/opendm_core.swift
+/windows/OpenDM/Core/
+/windows/OpenDM/Native/
+/windows/OpenDM/bin/
+/windows/OpenDM/obj/
+*.user
+.vs/
 .DS_Store

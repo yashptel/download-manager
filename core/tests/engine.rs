@@ -1,8 +1,8 @@
 //! End-to-end checks against the real aria2-next binary.
 //!
 //! Run `scripts/fetch-engine.sh` first, or point OPENDM_TEST_ENGINE at an
-//! aria2-next executable. Without one the test is skipped.
-#![cfg(unix)]
+//! aria2-next executable (on Windows, `scripts/fetch-engine.ps1`). Without
+//! one the test is skipped.
 
 use opendm_core::{
     CoreConfig, CoreListener, DownloadCore, EngineState, GlobalStats, TaskRow, TaskStatus,
@@ -19,14 +19,35 @@ fn engine_path() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("OPENDM_TEST_ENGINE") {
         return Some(path.into());
     }
-    let arch = if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        "x86_64"
+    let name = match (cfg!(windows), cfg!(target_arch = "aarch64")) {
+        (true, true) => "aria2-next-windows-arm64.exe",
+        (true, false) => "aria2-next-windows-x86_64.exe",
+        (false, true) => "aria2-next-macos-arm64",
+        (false, false) => "aria2-next-macos-x86_64",
     };
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../vendor/aria2-next/bin/aria2-next-macos-{arch}"));
+        .join("../vendor/aria2-next/bin")
+        .join(name);
     path.exists().then_some(path)
+}
+
+fn kill_hard(pid: u32) {
+    let pid = pid.to_string();
+    let status = if cfg!(windows) {
+        std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid])
+            .status()
+    } else {
+        std::process::Command::new("kill")
+            .args(["-9", &pid])
+            .status()
+    };
+    assert!(status.unwrap().success(), "could not kill the engine");
+}
+
+/// Compares paths regardless of separator style and symlinked temp folders.
+fn same_file(a: &Path, b: &Path) -> bool {
+    std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok()
 }
 
 #[derive(Default)]
@@ -179,10 +200,7 @@ fn survives_an_engine_crash_and_an_app_restart() {
             .is_some_and(|row| row.status == TaskStatus::Downloading && row.done_bytes > 0)
     });
     let first_pid = core.engine_pid().unwrap();
-    std::process::Command::new("kill")
-        .args(["-9", &first_pid.to_string()])
-        .status()
-        .unwrap();
+    kill_hard(first_pid);
 
     wait_until("engine restart", Duration::from_secs(15), || {
         core.engine_state() == EngineState::Running
@@ -207,7 +225,10 @@ fn survives_an_engine_crash_and_an_app_restart() {
     assert_eq!(done.category, "Other");
     assert_eq!(done.total_bytes, FILE_SIZE);
     let path = PathBuf::from(done.path.clone().unwrap());
-    assert_eq!(path, downloads.join("data.bin"));
+    assert!(
+        same_file(&path, &downloads.join("data.bin")),
+        "unexpected path {path:?}"
+    );
     let bytes = std::fs::read(&path).unwrap();
     assert_eq!(bytes.len() as u64, FILE_SIZE);
     assert!(
@@ -234,7 +255,10 @@ fn survives_an_engine_crash_and_an_app_restart() {
         .find(|row| row.name == "other.zip")
         .unwrap();
     let other_path = PathBuf::from(other.path.clone().unwrap());
-    assert_eq!(other_path, downloads.join("Compressed").join("other.zip"));
+    assert!(
+        same_file(&other_path, &downloads.join("Compressed").join("other.zip")),
+        "unexpected path {other_path:?}"
+    );
     core.remove(vec![other.id.clone()], true);
     wait_until("removal", Duration::from_secs(10), || {
         row(&core, &other.id).is_none()

@@ -15,7 +15,12 @@ archs=$(uname -m)
 if [ "${1:-}" = "--universal" ]; then
     archs="arm64 x86_64"
 fi
-export MACOSX_DEPLOYMENT_TARGET=13.0
+# MACOSX_DEPLOYMENT_TARGET is deliberately unset: it also applies to host
+# proc-macros, which the Xcode 27 linker then emits in a form dyld rejects.
+# Rust's default targets (macOS 11 arm64, 10.12 x86_64) are below the app's
+# 13; bundled C code (SQLite) gets the minimum through its own flags.
+export CFLAGS_aarch64_apple_darwin="-mmacosx-version-min=13.0"
+export CFLAGS_x86_64_apple_darwin="-mmacosx-version-min=13.0"
 
 work="$root/build/macos"
 rm -rf "$work"
