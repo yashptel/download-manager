@@ -16,7 +16,8 @@ The browser extension and the native messaging host come in later milestones;
 see [docs/research.md](docs/research.md).
 
 The icon is drawn by `scripts/make-icons.py` (Python with Pillow), which writes
-`docs/icon.svg`, the Windows `.ico` and title-bar PNGs, and the macOS `.icns`.
+`docs/icon.svg`, the Windows app icon, title-bar PNGs and light/dark tray icons,
+and the macOS `.icns`.
 
 ## Build the macOS app
 
