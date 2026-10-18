@@ -442,6 +442,9 @@ public sealed partial class MainWindow : Window
     }
 
     private void Add_Click(object sender, RoutedEventArgs e) => _ = ShowNewDownload();
+
+    /// <summary>The New Download prompt, from the tray menu.</summary>
+    internal void NewDownload() => _ = ShowNewDownload();
     private void Resume_Click(object sender, RoutedEventArgs e) => Resume(SelectedRows());
     private void Pause_Click(object sender, RoutedEventArgs e) => Pause(SelectedRows());
     private void Remove_Click(object sender, RoutedEventArgs e) => _ = Remove(SelectedRows(), false);
@@ -636,8 +639,7 @@ public sealed partial class MainWindow : Window
             _ when stats.Active > 0 && stats.DownloadSpeed > 0 =>
                 $"{stats.Active} downloading \u00B7 {Format.Speed(stats.DownloadSpeed)}",
             _ when stats.Active > 0 => $"{stats.Active} downloading",
-            _ when stats.Waiting > 0 => $"{stats.Waiting} waiting",
-            _ => "",
+            _ => Format.Idle(store.Items),
         };
         switch (store.EngineState)
         {

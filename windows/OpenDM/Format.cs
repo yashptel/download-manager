@@ -80,6 +80,14 @@ internal static class Format
         _ => row.Error ?? "Failed",
     };
 
+    /// <summary>What waits when nothing downloads: "2 paused", "1 queued · 3 paused"; empty when nothing does.</summary>
+    public static string Idle(IReadOnlyList<DownloadItem> items)
+    {
+        var queued = items.Count(item => item.Row.Status == TaskStatus.Queued);
+        var paused = items.Count(item => item.Row.Status == TaskStatus.Paused);
+        return string.Join(" \u00B7 ", new[] { queued > 0 ? $"{queued} queued" : null, paused > 0 ? $"{paused} paused" : null }.OfType<string>());
+    }
+
     /// <summary>Segoe Fluent Icons glyph for a category.</summary>
     public static string Glyph(string category) => category switch
     {
