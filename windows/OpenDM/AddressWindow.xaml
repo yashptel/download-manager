@@ -20,12 +20,13 @@
                 </Grid.ColumnDefinitions>
                 <FontIcon x:Name="FileGlyph" FontSize="40" VerticalAlignment="Top" />
                 <StackPanel Grid.Column="1" Spacing="6">
-                    <Grid ColumnSpacing="8">
+                    <!-- The gap is the ring's margin, so the heading moves left when the ring goes. -->
+                    <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <ProgressRing x:Name="Waiting" Width="16" Height="16" IsActive="True" VerticalAlignment="Top" Margin="0,2,0,0" />
+                        <ProgressRing x:Name="Waiting" Width="16" Height="16" IsActive="True" VerticalAlignment="Top" Margin="0,2,8,0" />
                         <TextBlock x:Name="Heading" Grid.Column="1" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap"
                                    MaxLines="2" TextTrimming="CharacterEllipsis" />
                     </Grid>
