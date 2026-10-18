@@ -36,7 +36,7 @@
         <!-- Custom title bar: the system draws the caption buttons on the right. -->
         <Grid x:Name="TitleBar" Padding="16,0,0,0">
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE896;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                <Image x:Name="AppIcon" Width="16" Height="16" VerticalAlignment="Center" />
                 <TextBlock Text="OpenDM" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
                 <TextBlock x:Name="Subtitle" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
