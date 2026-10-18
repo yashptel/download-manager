@@ -113,7 +113,7 @@ async fn run_once(shared: &Arc<Shared>, shutdown: &mut tokio::sync::watch::Recei
     exit
 }
 
-fn engine_dir(shared: &Shared) -> std::path::PathBuf {
+pub(crate) fn engine_dir(shared: &Shared) -> std::path::PathBuf {
     shared.data_dir.join("engine")
 }
 

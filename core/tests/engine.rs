@@ -11,10 +11,13 @@ use opendm_core::{
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const FILE_SIZE: u64 = 12 * 1024 * 1024;
+/// While set, /flaky/ responses break off after 256 KB.
+static FLAKY: AtomicBool = AtomicBool::new(true);
 
 fn engine_path() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("OPENDM_TEST_ENGINE") {
@@ -100,6 +103,7 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
     let mut ranged = false;
     let mut is_head = false;
     let mut private = false;
+    let mut flaky = false;
     let mut authorized = false;
     loop {
         let mut line = String::new();
@@ -115,6 +119,9 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
         }
         if line.contains(" /private/") {
             private = true;
+        }
+        if line.contains(" /flaky/") {
+            flaky = FLAKY.load(Ordering::SeqCst);
         }
         // u:p
         if line.eq_ignore_ascii_case("authorization: basic dTpw") {
@@ -150,6 +157,9 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
         return Ok(());
     }
     let mut position = start;
+    if flaky {
+        end = end.min(start + 256 * 1024);
+    }
     while position <= end {
         let chunk_end = (position + 16 * 1024).min(end + 1);
         let chunk: Vec<u8> = (position..chunk_end).map(byte_at).collect();
@@ -349,5 +359,48 @@ fn a_refused_download_asks_for_a_login_and_finishes_with_it() {
     let path = PathBuf::from(row(&core, &id).unwrap().path.unwrap());
     assert_eq!(std::fs::read(&path).unwrap().len() as u64, FILE_SIZE);
     assert_eq!(recorder.logins.lock().unwrap().len(), 1, "asked once");
+    core.shutdown();
+}
+
+
+#[test]
+fn a_download_that_failed_partway_continues_into_a_correct_file() {
+    let Some(engine) = engine_path() else {
+        eprintln!("skipped: no aria2-next binary (run scripts/fetch-engine.sh)");
+        return;
+    };
+    let port = serve();
+    let temp = tempfile::tempdir().unwrap();
+    let downloads = temp.path().join("downloads");
+    let core = open(&engine, &temp.path().join("data"), &downloads, Arc::new(Recorder::default()));
+    let mut settings = core.settings();
+    settings.max_tries = 1;
+    settings.retry_wait = 0;
+    core.set_settings(settings).unwrap();
+    core.start();
+    wait_until("engine start", Duration::from_secs(15), || {
+        core.engine_state() == EngineState::Running
+    });
+
+    core.add_urls(vec![format!("http://127.0.0.1:{port}/flaky/big.bin")], false);
+    wait_until("the row", Duration::from_secs(5), || core.rows().len() == 1);
+    let id = core.rows()[0].id.clone();
+    wait_until("the failure", Duration::from_secs(30), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Failed)
+    });
+    let failed = row(&core, &id).unwrap();
+    assert!(failed.done_bytes > 0 && failed.done_bytes < FILE_SIZE, "{failed:?}");
+
+    // The server recovers; Retry must not take the untouched parts as done.
+    FLAKY.store(false, Ordering::SeqCst);
+    core.resume(vec![id.clone()]);
+    wait_until("completion after the retry", Duration::from_secs(60), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Complete)
+    });
+    let path = PathBuf::from(row(&core, &id).unwrap().path.unwrap());
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(bytes.len() as u64, FILE_SIZE);
+    let first_wrong = bytes.iter().enumerate().position(|(index, byte)| *byte != byte_at(index as u64));
+    assert_eq!(first_wrong, None, "the file should be correct throughout");
     core.shutdown();
 }

@@ -1009,7 +1009,7 @@ pub async fn resume(shared: &Shared, ids: Vec<String>) -> Result<(), String> {
                 rpc.call("aria2.retryMedia", vec![id]).await
             } else {
                 let options = readd_options(&rpc, task).await;
-                restart(&rpc, task, options).await
+                restart(shared, &rpc, task, &task.row.url, options).await
             }
         };
         if let Err(error) = result {
@@ -1068,11 +1068,54 @@ async fn readd_options(rpc: &Rpc, task: &Task) -> serde_json::Map<String, Value>
     options
 }
 
-/// Starts a failed download again under its own GID.
-async fn restart(rpc: &Rpc, task: &Task, options: serde_json::Map<String, Value>) -> Result<Value, String> {
+/// Starts a failed download again under its own GID, from `url`.
+///
+/// The engine sizes the file in full when it starts and keeps which parts
+/// are done in its own state, which dropping the failed task discards. Re-
+/// added over a full-length file, it would take the untouched parts as done
+/// and call a partial file complete. So the file is first cut to the part
+/// known to be done from its start, and the download continues from there.
+async fn restart(
+    shared: &Shared,
+    rpc: &Rpc,
+    task: &Task,
+    url: &str,
+    options: serde_json::Map<String, Value>,
+) -> Result<Value, String> {
+    let done = done_from_start(shared, &task.row.id);
     let _ = rpc.call("aria2.removeDownloadResult", vec![json!(task.row.id)]).await;
-    rpc.call("aria2.addUri", vec![json!([task.row.url]), Value::Object(options)])
+    for file in &task.files {
+        let longer = std::fs::metadata(file).is_ok_and(|meta| meta.len() > done);
+        if longer {
+            let cut = std::fs::OpenOptions::new().write(true).open(file).and_then(|file| file.set_len(done));
+            if let Err(error) = cut {
+                return Err(format!("Could not prepare {file} to continue: {error}"));
+            }
+        }
+    }
+    rpc.call("aria2.addUri", vec![json!([url]), Value::Object(options)])
         .await
+}
+
+/// Bytes of a download done without a gap from its start, as the engine's
+/// resume state has them ("0-98304,1585152-1683456"); 0 when unknown.
+fn done_from_start(shared: &Shared, id: &str) -> u64 {
+    let path = crate::engine::engine_dir(shared).join("state/stream/state.db");
+    let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let ranges: Option<String> = rusqlite::Connection::open_with_flags(path, flags)
+        .and_then(|db| {
+            db.query_row("SELECT completed_ranges FROM downloads WHERE gid = ?1", [id], |row| row.get(0))
+        })
+        .ok();
+    ranges.as_deref().map_or(0, prefix_length)
+}
+
+fn prefix_length(ranges: &str) -> u64 {
+    let first = ranges.split(',').next().unwrap_or("");
+    match first.split_once('-') {
+        Some(("0", end)) => end.trim().parse().unwrap_or(0),
+        _ => 0,
+    }
 }
 
 /// After a 401 or 403: fresh browser cookies first, once until the user
@@ -1115,7 +1158,7 @@ async fn retry_with_fresh_cookies(shared: &Shared, task: &Task) -> bool {
     headers.retain(|line| !is_cookie(line));
     headers.push(json!(fresh));
     options.insert("header".into(), Value::Array(headers));
-    let restarted = restart(&rpc, task, options).await.is_ok();
+    let restarted = restart(shared, &rpc, task, &task.row.url, options).await.is_ok();
     if restarted {
         finish_action(shared, &rpc, std::slice::from_ref(task)).await;
     }
@@ -1132,7 +1175,7 @@ pub async fn set_login(shared: &Shared, id: &str, user: &str, password: &str) ->
     let mut options = readd_options(&rpc, &task).await;
     options.insert("http-user".into(), json!(user));
     options.insert("http-passwd".into(), json!(password));
-    restart(&rpc, &task, options).await?;
+    restart(shared, &rpc, &task, &task.row.url, options).await?;
     finish_action(shared, &rpc, std::slice::from_ref(&task)).await;
     Ok(())
 }
