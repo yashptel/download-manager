@@ -33,10 +33,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController(store: store)
         core.start()
         Self.installBrowserHost(core)
-        // The browser extension starts OpenDM with --background when it is not running.
-        if !CommandLine.arguments.contains("--background") {
+        // At login, and when the browser extension starts it (--background),
+        // OpenDM opens in the menu bar only.
+        if CommandLine.arguments.contains("--background") || Self.launchedAtLogin() {
+            NSApp.setActivationPolicy(.accessory)
+        } else {
             mainWindow?.show()
         }
+    }
+
+    /// Whether macOS opened the app as a login item.
+    private static func launchedAtLogin() -> Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
+        return event.eventID == kAEOpenApplication
+            && event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -1,5 +1,6 @@
 import AppKit
 import OpenDMCore
+import ServiceManagement
 import SwiftUI
 
 /// The core's settings; SwiftUI has a Settings of its own.
@@ -77,6 +78,26 @@ final class SettingsModel: ObservableObject {
     init(core: DownloadCore) {
         self.core = core
         settings = core.settings()
+        // Approval happens in System Settings, so look again on return.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.loginItem = LoginItem.current }
+        }
+    }
+
+    // Login items live with macOS, not in the core's settings file.
+    @Published var loginItem = LoginItem.current
+
+    func setOpenAtLogin(_ on: Bool) {
+        do {
+            if on {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+        loginItem = LoginItem.current
     }
 
     private func save() {
@@ -201,6 +222,21 @@ private struct EditorBox: View {
 }
 
 /// Grey text under a group, as in System Settings.
+/// Whether macOS opens OpenDM at login.
+enum LoginItem {
+    case off, on, needsApproval
+
+    var isOn: Bool { self != .off }
+
+    static var current: LoginItem {
+        switch SMAppService.mainApp.status {
+        case .enabled: .on
+        case .requiresApproval: .needsApproval
+        default: .off
+        }
+    }
+}
+
 private struct Note: View {
     let text: String
     init(_ text: String) { self.text = text }
@@ -237,6 +273,20 @@ private struct GeneralSettings: View {
                 Text("When a download is added")
             } footer: {
                 Note("Asking shows the Download File Info dialog to name the file and pick its folder. Without it, downloads start at once.")
+            }
+            Section {
+                Toggle("Open at login", isOn: Binding(get: { model.loginItem.isOn }, set: model.setOpenAtLogin))
+            } footer: {
+                if model.loginItem == .needsApproval {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Note("macOS is waiting for you to allow OpenDM in Login Items.")
+                        Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
+                            .buttonStyle(.link)
+                            .font(.callout)
+                    }
+                } else {
+                    Note("OpenDM starts in the menu bar, ready for downloads from the browser. Closing its window keeps it running there; Quit stops it.")
+                }
             }
         }
         .formStyle(.grouped)
@@ -542,4 +592,3 @@ private struct EngineSettings: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 }
-

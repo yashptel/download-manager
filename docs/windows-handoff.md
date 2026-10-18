@@ -73,6 +73,14 @@ and Fluent styling, dark mode, keyboard access.
 
 ## Check on Windows too
 
+- **Open at login and the tray.** General has an "Open at login" switch on
+  macOS (it registers the app with `SMAppService`). On Windows, add the same
+  switch: write `"<path to OpenDM.exe>" --background` to
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (value name
+  `OpenDM`), and read that value back for the switch's state, so the
+  registry stays the only record of it. With `--background` the app starts
+  in the tray with no window, as it already does when the extension starts
+  it. Closing the window keeps it in the tray; Exit in the tray menu quits.
 - **Video site support.** `core/src/sites.rs` downloads `yt-dlp.exe` (or
   `yt-dlp_arm64.exe`) and Deno into the data folder when the extension first
   connects, and unpacks Deno's zip with Windows' own `tar.exe`. This is
@@ -88,4 +96,3 @@ and Fluent styling, dark mode, keyboard access.
   Windows.
 
 Commit in small steps with plain messages and push to `main`.
-
