@@ -104,7 +104,7 @@ const videoHeight = (file) =>
 
 // ─── Setup ──────────────────────────────────────────────────────────────
 for (const dir of [DATA, PROFILE + "/Default", PROFILE + "/NativeMessagingHosts", APP_DL, BROWSER_DL]) fs.mkdirSync(dir, { recursive: true });
-fs.writeFileSync(DATA + "/settings.json", JSON.stringify({ download_dir: APP_DL, confirm_downloads: false }));
+fs.writeFileSync(DATA + "/settings.json", JSON.stringify({ download_dir: APP_DL, confirm_downloads: false, show_progress_window: false }));
 fs.writeFileSync(PROFILE + "/Default/Preferences", JSON.stringify({ download: { default_directory: BROWSER_DL, prompt_for_download: false } }));
 fs.writeFileSync(
   PROFILE + "/NativeMessagingHosts/org.opendm.host.json",

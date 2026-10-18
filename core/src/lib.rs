@@ -139,6 +139,22 @@ pub struct NewDownload {
 
 /// A download as it will be, before it starts.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct TaskDetails {
+    /// Share done (0-100) of each equal part of the file; empty when the
+    /// engine has no piece map (streams, or not started yet).
+    pub segments: Vec<u8>,
+    pub connections: Vec<ConnectionInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct ConnectionInfo {
+    pub host: String,
+    /// Bytes per second.
+    pub speed: u64,
+}
+
+/// A download as it will be, before it starts.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct FileInfo {
     pub name: String,
     pub size: Option<u64>,
@@ -362,13 +378,27 @@ impl DownloadCore {
         self.run(move |shared| async move { tasks::add_urls(&shared, urls, start_paused).await });
     }
 
-    /// Starts downloads with their names, folders and request headers.
-    pub fn add_downloads(&self, downloads: Vec<NewDownload>, start_paused: bool) {
-        self.run(move |shared| async move {
-            tasks::add(&shared, downloads, start_paused)
-                .await
-                .map(|_| ())
-        });
+    /// Starts downloads with their names, folders and request headers, and
+    /// returns their IDs at once; their rows follow through the listener.
+    pub fn add_downloads(&self, downloads: Vec<NewDownload>, start_paused: bool) -> Vec<String> {
+        let downloads = match tasks::with_ids(downloads) {
+            Ok(downloads) => downloads,
+            Err(message) => {
+                self.shared.listener.error(message);
+                return Vec::new();
+            }
+        };
+        let ids = downloads.iter().map(|(id, _)| id.clone()).collect();
+        self.run(move |shared| async move { tasks::add(&shared, downloads, start_paused).await });
+        ids
+    }
+
+    /// Segment map and connections of a download, for its progress window.
+    /// Asks the engine, so call it off the main thread.
+    pub fn task_details(&self, id: String, cells: u32) -> TaskDetails {
+        let shared = self.shared.clone();
+        self.runtime
+            .block_on(async move { tasks::details(&shared, &id, cells as usize).await })
     }
 
     /// Name, category and folder of a download from what is already known,

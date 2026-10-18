@@ -451,7 +451,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
                    dropOperation: NSTableView.DropOperation) -> Bool {
         let links = Self.links(from: info.draggingPasteboard)
         guard !links.isEmpty else { return false }
-        core.addUrls(urls: links, startPaused: false)
+        NewDownloads.present(links.map { NewDownload(url: $0) }, core: core)
         return true
     }
 
@@ -480,7 +480,9 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 
     func resume(_ rows: [TaskRow]) {
         let ids = rows.filter { $0.status == .paused || $0.status == .failed }.map(\.id)
-        if !ids.isEmpty { core.resume(ids: ids) }
+        guard !ids.isEmpty else { return }
+        core.resume(ids: ids)
+        ProgressWindowController.show(ids: ids, core: core)
     }
 
     func pause(_ rows: [TaskRow]) {

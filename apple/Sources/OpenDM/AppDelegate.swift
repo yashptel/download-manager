@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.core = core
         store.load(from: core)
+        ProgressWindowController.store = store
         store.onBrowserDownloads = { [weak self] downloads, _ in
             guard let core = self?.core else { return }
             NewDownloads.present(downloads, core: core)

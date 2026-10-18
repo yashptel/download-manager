@@ -10,7 +10,8 @@ enum NewDownloads {
     static func present(_ downloads: [NewDownload], core: DownloadCore) {
         guard !downloads.isEmpty else { return }
         guard core.settings().confirmDownloads else {
-            core.addDownloads(downloads: downloads, startPaused: false)
+            let ids = core.addDownloads(downloads: downloads, startPaused: false)
+            ProgressWindowController.show(ids: ids, core: core)
             return
         }
         if downloads.count == 1 {
@@ -222,7 +223,8 @@ final class DownloadInfoController: ConfirmationPanelController {
     private func finish(_ answer: DownloadInfoView.Answer) {
         if answer != .cancel {
             model.saveFolderForCategory()
-            core.addDownloads(downloads: [model.confirmed], startPaused: answer == .later)
+            let ids = core.addDownloads(downloads: [model.confirmed], startPaused: answer == .later)
+            if answer == .start { ProgressWindowController.show(ids: ids, core: core) }
         }
         close()
     }
@@ -381,7 +383,8 @@ final class BatchDownloadController: ConfirmationPanelController {
 
     private func finish(_ answer: DownloadInfoView.Answer) {
         if answer != .cancel {
-            core.addDownloads(downloads: model.confirmed, startPaused: answer == .later)
+            let ids = core.addDownloads(downloads: model.confirmed, startPaused: answer == .later)
+            if answer == .start { ProgressWindowController.show(ids: ids, core: core) }
         }
         close()
     }

@@ -10,7 +10,7 @@ use crate::db::progress;
 use crate::engine::random_hex;
 use crate::rpc::Rpc;
 use crate::settings::{OTHER_CATEGORY, Settings};
-use crate::{FileInfo, GlobalStats, NewDownload, Shared, TaskRow, TaskStatus};
+use crate::{ConnectionInfo, FileInfo, GlobalStats, NewDownload, Shared, TaskDetails, TaskRow, TaskStatus};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -579,6 +579,62 @@ impl NewDownload {
     }
 }
 
+/// A running download's segments and connections, for its progress window.
+/// `cells` is how many parts the segment map is drawn in; each holds the
+/// percentage of its pieces that are done.
+pub async fn details(shared: &Shared, id: &str, cells: usize) -> TaskDetails {
+    let mut details = TaskDetails { segments: Vec::new(), connections: Vec::new() };
+    let Some(rpc) = shared.current_rpc() else { return details };
+    let Ok(answers) = rpc
+        .multicall(vec![
+            ("aria2.tellStatus", vec![json!(id), json!(["bitfield", "numPieces"])]),
+            ("aria2.getServers", vec![json!(id)]),
+        ])
+        .await
+    else {
+        return details;
+    };
+    let mut answers = answers.into_iter();
+    if let Some(Ok(status)) = answers.next() {
+        let pieces = number(&status, "numPieces").unwrap_or(0) as usize;
+        let bitfield = status["bitfield"].as_str().unwrap_or("");
+        details.segments = segment_map(bitfield, pieces, cells);
+    }
+    if let Some(Ok(files)) = answers.next() {
+        for server in into_list(files).iter().flat_map(|file| into_list(file["servers"].clone())) {
+            let uri = server["currentUri"].as_str().or(server["uri"].as_str()).unwrap_or("");
+            let host = uri.split_once("://").map_or(uri, |(_, rest)| rest);
+            details.connections.push(ConnectionInfo {
+                host: host.split(['/', '?']).next().unwrap_or("").to_string(),
+                speed: number(&server, "downloadSpeed").unwrap_or(0),
+            });
+        }
+    }
+    details
+}
+
+/// aria2's bitfield (hex, first piece in the high bit) as the share done
+/// of each of `cells` equal parts.
+fn segment_map(bitfield: &str, pieces: usize, cells: usize) -> Vec<u8> {
+    if pieces == 0 || cells == 0 || bitfield.is_empty() {
+        return Vec::new();
+    }
+    let bits: Vec<bool> = bitfield
+        .chars()
+        .filter_map(|c| c.to_digit(16))
+        .flat_map(|digit| (0..4).rev().map(move |shift| digit >> shift & 1 == 1))
+        .take(pieces)
+        .collect();
+    let cells = cells.min(pieces);
+    (0..cells)
+        .map(|cell| {
+            let (start, end) = (cell * pieces / cells, (cell + 1) * pieces / cells);
+            let done = bits[start..end.min(bits.len())].iter().filter(|done| **done).count();
+            (done * 100 / (end - start).max(1)) as u8
+        })
+        .collect()
+}
+
 /// What a download will be before it starts: its name and size from the
 /// server (as the browser would see them), its category and folder.
 pub async fn inspect(shared: &Shared, download: &NewDownload) -> Result<FileInfo, String> {
@@ -622,28 +678,33 @@ pub async fn add_urls(
     urls: Vec<String>,
     start_paused: bool,
 ) -> Result<(), String> {
-    let downloads = urls.iter().map(|url| NewDownload::url(url)).collect();
-    add(shared, downloads, start_paused).await.map(|_| ())
+    let downloads = with_ids(urls.iter().map(|url| NewDownload::url(url)).collect())?;
+    add(shared, downloads, start_paused).await
 }
 
-/// Starts downloads and returns their IDs in order.
+/// Gives each download its engine ID up front, so callers can follow it
+/// before the engine has it. Downloads without an address are dropped.
+pub fn with_ids(downloads: Vec<NewDownload>) -> Result<Vec<(String, NewDownload)>, String> {
+    downloads
+        .into_iter()
+        .filter(|download| !download.url.trim().is_empty())
+        .map(|download| Ok((random_hex(8)?, download)))
+        .collect()
+}
+
+/// Starts downloads under their IDs.
 pub async fn add(
     shared: &Shared,
-    downloads: Vec<NewDownload>,
+    downloads: Vec<(String, NewDownload)>,
     start_paused: bool,
-) -> Result<Vec<String>, String> {
+) -> Result<(), String> {
     let rpc = shared.wait_rpc().await?;
     let settings = shared.settings.lock().unwrap().clone();
     let start = shared.tasks.lock().unwrap().next_added_at(now_ms());
     let mut new_tasks = Vec::new();
     let mut calls = Vec::new();
-    for (index, download) in downloads
-        .into_iter()
-        .filter(|download| !download.url.trim().is_empty())
-        .enumerate()
-    {
+    for (index, (id, download)) in downloads.into_iter().enumerate() {
         let url = download.url.trim();
-        let id = random_hex(8)?;
         // Offset by the index so a pasted list keeps its order.
         let mut task = Task::new(
             id.clone(),
@@ -665,10 +726,8 @@ pub async fn add(
         new_tasks.push(task);
     }
     if new_tasks.is_empty() {
-        return Ok(Vec::new());
+        return Ok(());
     }
-    let ids: Vec<String> = new_tasks.iter().map(|task| task.row.id.clone()).collect();
-
     // Show the rows right away; the engine fills in names and sizes.
     insert(shared, &new_tasks);
 
@@ -698,7 +757,7 @@ pub async fn add(
     shared.wake.notify_one();
 
     if failed.is_empty() {
-        return Ok(ids);
+        return Ok(());
     }
     let failed_ids: Vec<String> = failed.iter().map(|(id, _)| id.clone()).collect();
     forget(shared, &failed_ids);
@@ -1085,6 +1144,14 @@ mod tests {
         typed.engine_options(&mut options);
         assert_eq!(options["filename-hint"], "notes.txt");
         assert_eq!(options["filename-hint-source"], "browser");
+    }
+
+    #[test]
+    fn the_segment_map_reads_the_first_piece_from_the_high_bit() {
+        // 10 pieces: the first four and the ninth are done.
+        assert_eq!(segment_map("f080", 10, 5), vec![100, 100, 0, 0, 50]);
+        assert_eq!(segment_map("f080", 10, 100).len(), 10);
+        assert!(segment_map("", 10, 5).is_empty());
     }
 
     #[test]
