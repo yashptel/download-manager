@@ -46,6 +46,11 @@
         <NavigationView x:Name="Nav" Grid.Row="1" PaneDisplayMode="Left" IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False" IsTitleBarAutoPaddingEnabled="False" OpenPaneLength="220"
                         SelectionChanged="Nav_SelectionChanged">
+            <NavigationView.Resources>
+                <!-- Count badges: the default text margin (4,0,4,2) crowds the digits
+                     into the rounded ends and lifts them above the badge's middle. -->
+                <Thickness x:Key="ValueInfoBadgeTextMargin">6,0,6,1</Thickness>
+            </NavigationView.Resources>
             <Grid AllowDrop="True" DragOver="Content_DragOver" Drop="Content_Drop">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
