@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 
 namespace OpenDM;
 
@@ -21,11 +22,10 @@ internal sealed class DownloadStore
         Listener = new CoreEvents(this, dispatcher);
         if (TimingPath is not null)
         {
-            // Frames that took over 20 ms, as "-1,milliseconds", to see stutter while scrolling.
             TimeSpan? last = null;
-            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += (_, args) =>
+            CompositionTarget.Rendering += (_, args) =>
             {
-                var now = ((Microsoft.UI.Xaml.Media.RenderingEventArgs)args).RenderingTime;
+                var now = ((RenderingEventArgs)args).RenderingTime;
                 if (last is { } previous && (now - previous).TotalMilliseconds > 20)
                 {
                     File.AppendAllText(TimingPath, $"-1,{(now - previous).TotalMilliseconds:F1}\n");
@@ -51,8 +51,9 @@ internal sealed class DownloadStore
 
     /// <summary>
     /// With OPENDM_UI_TIMING set to a file path, each batch of changed rows
-    /// appends "rows,milliseconds" there: the UI-thread time to apply it,
-    /// including the layout pass it causes in <see cref="LayoutRoot"/>.
+    /// appends "rows,total,apply" there: the UI-thread milliseconds to apply
+    /// it, the total including the layout pass it causes in
+    /// <see cref="LayoutRoot"/>. Frames longer than 20 ms append "-1,ms".
     /// </summary>
     private static readonly string? TimingPath = Environment.GetEnvironmentVariable("OPENDM_UI_TIMING");
 
