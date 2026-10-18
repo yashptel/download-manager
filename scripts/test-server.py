@@ -2,9 +2,11 @@
 """A slow local HTTP server for trying the app with many live downloads.
 
 Every path serves a generated file of --size bytes with Range support,
-throttled per connection. Example: scripts/test-server.py --port 8765
+throttled per connection. Paths under /private/ ask for a login first:
+user "opendm", password "secret". Example: scripts/test-server.py --port 8765
 """
 import argparse
+import base64
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -16,6 +18,7 @@ args = parser.parse_args()
 
 CHUNK = 16 * 1024
 PATTERN = bytes(range(251)) * (CHUNK // 251 + 2)
+LOGIN = "Basic " + base64.b64encode(b"opendm:secret").decode()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -28,6 +31,13 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(body=True)
 
     def respond(self, body):
+        if self.path.startswith("/private/") and self.headers.get("Authorization") != LOGIN:
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="OpenDM test"')
+            self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            return
         start, end = 0, args.size - 1
         ranged = self.headers.get("Range", "").startswith("bytes=")
         if ranged:

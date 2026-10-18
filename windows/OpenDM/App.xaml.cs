@@ -33,6 +33,7 @@ public partial class App : Application
         }
         store.Load(core);
         store.BrowserDownloadsReceived += (downloads, _) => NewDownloads.Present(downloads, store, core);
+        store.LoginNeeded += (id, url) => LoginPrompt.Handle(id, url, store, core);
         window = new MainWindow(store, core);
         tray = new TrayIcon(store, core, ShowMainWindow, Quit);
         core.Start();
