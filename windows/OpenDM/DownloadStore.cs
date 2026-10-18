@@ -50,6 +50,10 @@ internal sealed class DownloadStore
     public event Action<string>? ErrorRaised;
     /// <summary>Downloads the browser extension handed over.</summary>
     public event Action<NewDownload[], BrowserSource>? BrowserDownloadsReceived;
+    /// <summary>A server wants a user name and password for download (id, url).</summary>
+    public event Action<string, string>? LoginNeeded;
+    /// <summary>The new address for a download waiting for one (id, download).</summary>
+    public event Action<string, NewDownload>? NewAddressReceived;
 
     /// <summary>
     /// With OPENDM_UI_TIMING set to a file path, each batch of changed rows
@@ -147,6 +151,11 @@ internal sealed class DownloadStore
 
         public void BrowserDownloads(NewDownload[] downloads, BrowserSource source) =>
             Post(() => store.BrowserDownloadsReceived?.Invoke(downloads, source));
+
+        public void LoginNeeded(string id, string url) => Post(() => store.LoginNeeded?.Invoke(id, url));
+
+        public void NewAddress(string id, NewDownload download) =>
+            Post(() => store.NewAddressReceived?.Invoke(id, download));
 
         private void Post(Action action) => dispatcher.TryEnqueue(() => action());
     }

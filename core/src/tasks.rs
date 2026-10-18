@@ -1635,7 +1635,8 @@ mod tests {
             ..NewDownload::url("https://example.com/get?id=1")
         };
         assert_eq!(typed.planned_name(), "notes.txt");
-        assert_eq!(typed.place(&settings, "notes.txt"), ("Documents".into(), "/dl/Documents".into()));
+        let documents = std::path::Path::new("/dl").join("Documents").display().to_string();
+        assert_eq!(typed.place(&settings, "notes.txt"), ("Documents".into(), documents));
         let mut options = serde_json::Map::new();
         typed.engine_options(&mut options);
         assert_eq!(options["filename-hint"], "notes.txt");
