@@ -154,6 +154,11 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 
     /// Switches between the Cards, List and Columns designs in place.
     private func applyStyle() {
+        let started = DispatchTime.now()
+        defer {
+            let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
+            log.debug("applied style \(self.style.title, privacy: .public) in \(milliseconds, format: .fixed(precision: 2)) ms")
+        }
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
         for tableColumn in tableView.tableColumns {
             let column = Column(rawValue: tableColumn.identifier.rawValue)

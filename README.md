@@ -54,7 +54,9 @@ trying the app with many live downloads.
 
 On macOS with 5,060 rows and 60 live downloads, the list spends 0.1 ms per
 progress tick with the live rows off-screen, about 3 ms with 21 live rows on
-screen, and about 5 ms when sorted by speed (every tick re-sorts).
+screen, and 4–7 ms when sorted by speed (every tick re-sorts; Cards 3.9 ms,
+List 5.2 ms, Columns 7.0 ms on average). Switching between the Cards, List
+and Columns styles takes 50–100 ms at that size.
 
 ## License
 
