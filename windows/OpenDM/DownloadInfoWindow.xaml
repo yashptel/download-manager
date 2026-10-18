@@ -35,22 +35,24 @@
                     </StackPanel>
                 </Grid>
 
-                <Grid ColumnSpacing="12" RowSpacing="12">
+                <!-- Row gaps are top margins, so the rows that start collapsed take no room. -->
+                <Grid ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
-                        <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <TextBlock Text="Name" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="NameBox" Grid.Column="1" TextChanged="NameBox_TextChanged" />
 
-                    <TextBlock Grid.Row="1" Text="Category" Style="{StaticResource FieldLabel}" />
-                    <ComboBox x:Name="CategoryBox" Grid.Row="1" Grid.Column="1" MinWidth="200" SelectionChanged="CategoryBox_SelectionChanged" />
+                    <TextBlock Grid.Row="1" Text="Category" Style="{StaticResource FieldLabel}" Margin="0,12,0,0" />
+                    <ComboBox x:Name="CategoryBox" Grid.Row="1" Grid.Column="1" MinWidth="200" Margin="0,12,0,0" SelectionChanged="CategoryBox_SelectionChanged" />
 
-                    <TextBlock Grid.Row="2" Text="Save to" Style="{StaticResource FieldLabel}" />
-                    <Grid Grid.Row="2" Grid.Column="1" ColumnSpacing="8">
+                    <TextBlock Grid.Row="2" Text="Save to" Style="{StaticResource FieldLabel}" Margin="0,12,0,0" />
+                    <Grid Grid.Row="2" Grid.Column="1" ColumnSpacing="8" Margin="0,12,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
@@ -59,14 +61,14 @@
                         <Button Grid.Column="1" Content="Browse&#x2026;" Click="Browse_Click" />
                     </Grid>
 
-                    <CheckBox x:Name="RememberBox" Grid.Row="3" Grid.Column="1" Visibility="Collapsed" />
+                    <CheckBox x:Name="RememberBox" Grid.Row="3" Grid.Column="1" Visibility="Collapsed" Margin="0,8,0,0" />
 
-                    <TextBlock x:Name="QualityLabel" Grid.Row="4" Text="Quality" Style="{StaticResource FieldLabel}" Visibility="Collapsed" />
-                    <TextBlock x:Name="QualityText" Grid.Row="4" Grid.Column="1" Visibility="Collapsed" />
+                    <TextBlock x:Name="QualityLabel" Grid.Row="4" Text="Quality" Style="{StaticResource FieldLabel}" Visibility="Collapsed" Margin="0,12,0,0" />
+                    <TextBlock x:Name="QualityText" Grid.Row="4" Grid.Column="1" Visibility="Collapsed" Margin="0,12,0,0" />
 
-                    <TextBlock Grid.Row="5" Text="Address" Style="{StaticResource FieldLabel}" />
+                    <TextBlock Grid.Row="5" Text="Address" Style="{StaticResource FieldLabel}" Margin="0,12,0,0" />
                     <TextBlock x:Name="AddressText" Grid.Row="5" Grid.Column="1" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,12,0,0" />
                 </Grid>
             </StackPanel>
         </Border>

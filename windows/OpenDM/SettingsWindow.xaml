@@ -36,9 +36,12 @@
             <Style x:Key="Switch" TargetType="ToggleSwitch">
                 <Setter Property="OnContent" Value="" />
                 <Setter Property="OffContent" Value="" />
-                <Setter Property="MinWidth" Value="0" />
                 <Setter Property="Grid.Column" Value="1" />
                 <Setter Property="HorizontalAlignment" Value="Right" />
+                <!-- The switch and the template's gap for On/Off text, which these do not have; the
+                     gap goes into the card's padding so the switch ends where the fields do. -->
+                <Setter Property="Width" Value="52" />
+                <Setter Property="Margin" Value="0,0,-8,0" />
             </Style>
             <Style x:Key="Number" TargetType="NumberBox">
                 <Setter Property="Width" Value="120" />
@@ -105,10 +108,8 @@
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <TextBlock Text="Downloads at a time" Style="{StaticResource CardTitle}" />
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                <NumberBox x:Name="ConcurrentBox" Style="{StaticResource Number}" Minimum="1" Maximum="20" AutomationProperties.Name="Downloads at a time" />
-                                <TextBlock Style="{StaticResource Unit}" />
-                            </StackPanel>
+                            <NumberBox x:Name="ConcurrentBox" Grid.Column="1" Style="{StaticResource Number}" Minimum="1" Maximum="20"
+                                       AutomationProperties.Name="Downloads at a time" />
                         </Grid>
                     </Border>
 
