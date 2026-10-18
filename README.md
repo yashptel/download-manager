@@ -1,4 +1,4 @@
-# OpenDM
+# <img src="docs/icon.svg" width="40" height="40" align="top" alt=""> OpenDM
 
 An open-source download manager for macOS and Windows: IDM's browser-capture
 workflow and dialogs, with native UIs on each platform. OpenDM is a working name.
@@ -9,11 +9,14 @@ workflow and dialogs, with native UIs on each platform. OpenDM is a working name
 | `apple/` | macOS app (Swift, AppKit) as a Swift package |
 | `windows/` | Windows app (C#, WinUI 3, unpackaged); see [windows/README.md](windows/README.md) |
 | `vendor/aria2-next/` | Pinned engine version and checksums; binaries are downloaded, not committed |
-| `scripts/` | Build, engine fetch and test-server scripts |
-| `docs/` | Research notes and design decisions |
+| `scripts/` | Build, engine fetch, icon and test-server scripts |
+| `docs/` | Research notes, design decisions and the icon |
 
 The browser extension and the native messaging host come in later milestones;
 see [docs/research.md](docs/research.md).
+
+The icon is drawn by `scripts/make-icons.py` (Python with Pillow), which writes
+`docs/icon.svg`, the Windows `.ico` and title-bar PNGs, and the macOS `.icns`.
 
 ## Build the macOS app
 
