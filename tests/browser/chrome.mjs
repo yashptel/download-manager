@@ -3,15 +3,24 @@
 // charge (Playwright would take downloads over).
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 
 // Chrome itself: test builds are blocked from the network on this Mac. Chrome
 // 137+ ignores --load-extension, so the extension is loaded over a DevTools pipe.
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+// CHROME can name another Chromium browser, such as Edge.
+const WINDOWS = process.platform === "win32";
+const CHROME = process.env.CHROME ?? (WINDOWS
+  ? "C:/Program Files/Google/Chrome/Application/chrome.exe"
+  : "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const ID = "nkhhoiejpomapjkeomdbflaicnnjclfj";
-const REPO = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
-const ROOT = process.env.OPENDM_E2E_DIR ?? "/tmp/opendm-e2e";
+const REPO = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const ROOT = process.env.OPENDM_E2E_DIR ?? path.join(os.tmpdir(), "opendm-e2e");
+const HOST = WINDOWS
+  ? path.join(REPO, "build/windows/OpenDM-x64/opendm-host.exe")
+  : REPO + "/build/OpenDM.app/Contents/MacOS/opendm-host";
 // Each run starts clean in its own folder.
 const RUN = ROOT + "/run-" + Date.now();
 const DATA = RUN + "/data", PROFILE = RUN + "/profile", APP_DL = RUN + "/dl", BROWSER_DL = RUN + "/browser-dl";
@@ -98,22 +107,31 @@ function serverRequests(path) {
   return fs.readFileSync(ROOT + "/requests.log", "utf8").trim().split("\n").filter(Boolean).map(JSON.parse).filter((r) => r.path === path);
 }
 const engineRequests = (path) => serverRequests(path).filter((r) => !r.headers["Sec-Fetch-Dest"] && !r.headers["sec-fetch-dest"]);
-const listFiles = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir, { recursive: true }).map(String) : []);
+const listFiles = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir, { recursive: true }).map((f) => String(f).replaceAll("\\", "/")) : []);
 const videoHeight = (file) =>
   execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", file]).toString().trim();
 
 // ─── Setup ──────────────────────────────────────────────────────────────
 for (const dir of [DATA, PROFILE + "/Default", PROFILE + "/NativeMessagingHosts", APP_DL, BROWSER_DL]) fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(DATA + "/settings.json", JSON.stringify({ download_dir: APP_DL, confirm_downloads: false, show_progress_window: false }));
-fs.writeFileSync(PROFILE + "/Default/Preferences", JSON.stringify({ download: { default_directory: BROWSER_DL, prompt_for_download: false } }));
+// Chrome on Windows cannot save to a folder written with mixed slashes.
+fs.writeFileSync(PROFILE + "/Default/Preferences", JSON.stringify({ download: { default_directory: path.resolve(BROWSER_DL), prompt_for_download: false } }));
+const hostManifest = PROFILE + "/NativeMessagingHosts/org.opendm.host.json";
 fs.writeFileSync(
-  PROFILE + "/NativeMessagingHosts/org.opendm.host.json",
+  hostManifest,
   JSON.stringify({
     name: "org.opendm.host", description: "OpenDM", type: "stdio",
-    path: REPO + "/build/OpenDM.app/Contents/MacOS/opendm-host",
+    path: HOST,
     allowed_origins: ["chrome-extension://" + ID + "/"],
   }),
 );
+// Chromium on Windows finds hosts in the registry only; the app writes the
+// same key at every launch.
+if (WINDOWS) {
+  for (const browser of ["Google\\Chrome", "Microsoft\\Edge"]) {
+    execFileSync("reg", ["add", "HKCU\\Software\\" + browser + "\\NativeMessagingHosts\\org.opendm.host", "/ve", "/d", path.resolve(hostManifest), "/f"], { stdio: "ignore" });
+  }
+}
 fs.writeFileSync(ROOT + "/requests.log", "");
 
 const chrome = spawn(CHROME, [
@@ -132,7 +150,7 @@ function loadExtension() {
         if (message.id === 1) message.error ? reject(new Error(message.error.message)) : resolve(message.result.id);
       }
     });
-    chrome.stdio[3].write(JSON.stringify({ id: 1, method: "Extensions.loadUnpacked", params: { path: REPO + "/extension" } }) + "\0");
+    chrome.stdio[3].write(JSON.stringify({ id: 1, method: "Extensions.loadUnpacked", params: { path: path.join(REPO, "extension") } }) + "\0");
   });
 }
 
@@ -165,7 +183,7 @@ try {
     const items = await sw.evaluate("chrome.downloads.search({ state: 'complete' }).then(items => items.map(i => i.filename))");
     return items.find((name) => name.includes("Quarterly Report"));
   });
-  check("Alt-click download stays in the browser", Boolean(kept), kept);
+  check("Alt-click download stays in the browser", Boolean(kept), kept ?? (await leftover()).join(" "));
   const zips = listFiles(APP_DL).filter((f) => f.includes("Quarterly Report"));
   check("OpenDM did not get the Alt-click download", zips.length === 1, zips.join(", "));
 

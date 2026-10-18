@@ -1,10 +1,11 @@
 """Test site for OpenDM Connect: logs request headers, sets a session cookie
 on the page and serves the zip as an attachment."""
 import json, os, sys, time
+import tempfile
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-ROOT = os.environ.get("OPENDM_E2E_DIR", "/tmp/opendm-e2e")
+ROOT = os.environ.get("OPENDM_E2E_DIR", os.path.join(tempfile.gettempdir(), "opendm-e2e"))
 LOG = ROOT + "/requests.log"
 
 class Handler(SimpleHTTPRequestHandler):
