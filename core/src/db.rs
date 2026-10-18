@@ -111,6 +111,7 @@ impl Db {
                     media: row.get::<_, i64>(13)? != 0,
                     move_dir: row.get(14)?,
                     move_name: row.get(15)?,
+                    cookies_refreshed: false,
                 })
             })
             .map_err(|error| error.to_string())?

@@ -25,6 +25,7 @@ use crate::engine::random_hex;
 use crate::{BrowserSource, EngineState, NewDownload, Shared, tasks};
 use serde_json::{Value, json};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
@@ -36,6 +37,8 @@ const MAX_MANIFEST: usize = 2 * 1024 * 1024;
 /// How long a captured download waits for the server's first answer before
 /// the app takes it anyway.
 const CAPTURE_CHECK: Duration = Duration::from_secs(8);
+/// How long the browsers get to say which cookies they would send.
+const COOKIE_WAIT: Duration = Duration::from_secs(2);
 
 /// Request headers the engine sets itself, or that would break a download.
 const SKIPPED_HEADERS: &[&str] = &[
@@ -137,6 +140,13 @@ async fn connection<S: AsyncRead + AsyncWrite + Send + 'static>(shared: Arc<Shar
         let Ok(message) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
+        // An answer to a question the app asked the browser.
+        if let Some(id) = message["replyTo"].as_u64() {
+            if let Some(waiter) = shared.browser_requests.lock().unwrap().get(&id) {
+                let _ = waiter.send(message);
+            }
+            continue;
+        }
         if message["type"] == "hello" {
             // A browser with the extension: video sites will be asked for.
             crate::sites::prepare(shared.clone());
@@ -231,6 +241,37 @@ fn answer(accepted: Result<(), String>) -> Value {
         Ok(()) => json!({ "result": "accepted" }),
         Err(reason) => json!({ "result": "fallback", "reason": reason }),
     }
+}
+
+/// The cookies a connected browser would send to `url` now, as a Cookie
+/// header value. None when no browser is connected or none has any.
+pub async fn fresh_cookies(shared: &Shared, url: &str) -> Option<String> {
+    let id = shared.next_request.fetch_add(1, Ordering::Relaxed);
+    let (sender, mut answers) = mpsc::unbounded_channel::<Value>();
+    shared.browser_requests.lock().unwrap().insert(id, sender);
+    let question = json!({ "type": "cookies", "id": id, "url": url }).to_string();
+    let asked = {
+        let mut browsers = shared.browsers.lock().unwrap();
+        browsers.retain(|browser| browser.send(question.clone()).is_ok());
+        browsers.len()
+    };
+    let mut found = None;
+    let deadline = tokio::time::sleep(COOKIE_WAIT);
+    tokio::pin!(deadline);
+    for _ in 0..asked {
+        tokio::select! {
+            answer = answers.recv() => {
+                let cookie = answer.as_ref().and_then(|answer| answer["cookie"].as_str()).unwrap_or("");
+                if !cookie.is_empty() && !cookie.contains(['\r', '\n']) {
+                    found = Some(cookie.to_string());
+                    break;
+                }
+            }
+            _ = &mut deadline => break,
+        }
+    }
+    shared.browser_requests.lock().unwrap().remove(&id);
+    found
 }
 
 fn engine_down(shared: &Shared) -> bool {

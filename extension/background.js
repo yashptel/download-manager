@@ -120,7 +120,17 @@ function onAppMessage(port, message) {
     return;
   }
   if (message.type === "rules") return setRules(message.rules);
+  if (message.type === "cookies") return answerCookies(port, message);
   app.waiting.get(message.id)?.(null, message);
+}
+
+/** The app asks which cookies this browser would send to a URL now, to
+ * retry a download the server refused with older ones. */
+async function answerCookies(port, message) {
+  const cookie = typeof message.url === "string" && /^https?:/i.test(message.url) ? await cookieFor(message.url, []) : "";
+  try {
+    port.postMessage({ type: "cookies", replyTo: message.id, cookie });
+  } catch {}
 }
 
 function onDisconnect(port) {

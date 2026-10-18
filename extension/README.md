@@ -71,10 +71,11 @@ repeats.
 | Message | Answer |
 | --- | --- |
 | `{ type: "hello", start, browser, version }` | `{ type: "hello", app, version, rules }`. The first message on a port; with `start: false` the host answers `{ type: "error", code: "not-running" }` instead of starting OpenDM. |
-| `{ type: "download", source, items: [...] }` | `{ result: "accepted" }` or `{ result: "fallback", reason }`. `source` is `download`, `link`, `links` or `media`; each item has `url` and optionally `referrer`, `cookie`, `userAgent`, `filename`, `filenameSource` (`browser`, `title` or `suggested`), `mime`, `size` and `headers`. |
+| `{ type: "download", source, items: [...] }` | `{ result: "accepted" }` or `{ result: "fallback", reason }`. A captured download (`source: "download"`) is started by the app at once; it answers when the server does, and a refusal is a fallback. `source` is `download`, `link`, `links` or `media`; each item has `url` and optionally `referrer`, `cookie`, `userAgent`, `filename`, `filenameSource` (`browser`, `title` or `suggested`), `mime`, `size` and `headers`. |
 | `{ type: "inspect", item }` | `{ result: "ready", presentation: { live, durationMs, tracks: [{ id, type, language, codec, width, height, bandwidth, frameRate }] } }` or `{ result: "failed", reason }`. `item` is a stream item as below. The app has its engine read the playlist with a hidden task that it removes again. |
 | `{ type: "site", url, cookies }` | `{ result: "ready", videos: [{ title, duration, site, streams: [{ url, kind, headers }], files: [{ id, url, ext, vcodec, acodec, height, fps, tbr, size, language, headers }] }] }` or `{ result: "failed", reason, retry }`. yt-dlp's view of the page; `cookies` are the browser's cookies for the site. `retry` is set while yt-dlp is still being downloaded. |
 | (pushed by the app) | `{ type: "rules", rules: { capture, extensions, excludedSites, minSize } }` whenever the settings change. |
+| (asked by the app) `{ type: "cookies", id, url }` | The extension answers `{ type: "cookies", replyTo: id, cookie }`: the Cookie header it would send to `url` now. The app asks after a 401 or 403 and restarts the download once with the new cookies when they differ. |
 
 Stream items add `mediaKind` (`hls` or `dash`), optionally `mediaManifest` (the
 playlist text the page received, at most 2 MB), and for a chosen quality

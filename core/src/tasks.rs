@@ -61,6 +61,9 @@ pub struct Task {
     /// download cannot move, so it moves there when it completes.
     pub move_dir: Option<String>,
     pub move_name: Option<String>,
+    /// Restarted once with the browser's fresh cookies after a 401 or 403
+    /// since the user last started it; not saved.
+    pub cookies_refreshed: bool,
 }
 
 impl Task {
@@ -88,6 +91,7 @@ impl Task {
             media: false,
             move_dir: None,
             move_name: None,
+            cookies_refreshed: false,
         }
     }
 }
@@ -104,6 +108,8 @@ pub struct Table {
     /// Captured downloads started before the app has taken them; they stay
     /// out of the list until the server's first answer says it can.
     held: HashSet<String>,
+    /// Failed with 401 or 403; the poller asks the browser for new cookies.
+    refused: HashSet<String>,
     stats: GlobalStats,
 }
 
@@ -154,6 +160,10 @@ pub async fn run_poller(shared: Arc<Shared>) {
         if let Some(rpc) = shared.current_rpc() {
             // A failing tick means the engine is going away; the supervisor handles that.
             let _ = tick(&shared, &rpc).await;
+        }
+        let refused = std::mem::take(&mut shared.tasks.lock().unwrap().refused);
+        for id in refused {
+            tokio::spawn(retry_with_fresh_cookies(shared.clone(), id));
         }
     }
 }
@@ -312,6 +322,17 @@ async fn apply(
                 .or_insert_with(|| Task::new(id.to_string(), String::new(), String::new(), now));
             let before = task.row.clone();
             update_from_engine(task, status, &settings, now);
+            let refused = status["errorMessage"]
+                .as_str()
+                .is_some_and(|message| message.starts_with("HTTP 401") || message.starts_with("HTTP 403"));
+            let retry = task.row.status == TaskStatus::Failed
+                && before.status != TaskStatus::Failed
+                && refused
+                && !task.media
+                && !task.cookies_refreshed;
+            if retry {
+                task.cookies_refreshed = true;
+            }
             if task.row != before || is_new {
                 changed.push(task.row.clone());
                 if is_new || task.row.status != before.status || task.row.name != before.name {
@@ -325,6 +346,9 @@ async fn apply(
                         moves.push(id.to_string());
                     }
                 }
+            }
+            if retry {
+                table.refused.insert(id.to_string());
             }
         }
         for id in missing {
@@ -963,6 +987,15 @@ pub async fn resume(shared: &Shared, ids: Vec<String>) -> Result<(), String> {
     let targets = select(shared, &ids, |task| {
         matches!(task.row.status, TaskStatus::Paused | TaskStatus::Failed)
     });
+    {
+        // Started again by the user: a refusal may ask the browser once more.
+        let mut table = shared.tasks.lock().unwrap();
+        for task in &targets {
+            if let Some(task) = table.tasks.get_mut(&task.row.id) {
+                task.cookies_refreshed = false;
+            }
+        }
+    }
     let mut errors = Vec::new();
     for task in &targets {
         let id = json!(task.row.id);
@@ -977,16 +1010,8 @@ pub async fn resume(shared: &Shared, ids: Vec<String>) -> Result<(), String> {
                 // Keeps the media recovery data that a remove would discard.
                 rpc.call("aria2.retryMedia", vec![id]).await
             } else {
-                if in_engine {
-                    let _ = rpc
-                        .call("aria2.removeDownloadResult", vec![id.clone()])
-                        .await;
-                }
-                rpc.call(
-                    "aria2.addUri",
-                    vec![json!([task.row.url]), readd_options(task)],
-                )
-                .await
+                let options = readd_options(&rpc, task).await;
+                restart(&rpc, task, options).await
             }
         };
         if let Err(error) = result {
@@ -1001,14 +1026,83 @@ pub async fn resume(shared: &Shared, ids: Vec<String>) -> Result<(), String> {
     }
 }
 
+/// Options of a download the engine still holds that a restart keeps: what
+/// makes the server answer as it did for the browser, and the stream choices.
+const KEPT_OPTIONS: &[&str] = &[
+    "filename-hint",
+    "filename-hint-source",
+    "header",
+    "referer",
+    "user-agent",
+    "media",
+    "media-video",
+    "media-audio",
+    "media-format",
+    "media-input",
+];
+
 /// Options that restart a failed or lost download in place: same GID, same
-/// file, continuing from the bytes already on disk.
-fn readd_options(task: &Task) -> Value {
-    let mut options = json!({ "gid": task.row.id, "dir": task.row.dir, "continue": "true" });
-    if task.files.len() == 1 {
-        options["out"] = json!(task.row.name);
+/// file, continuing from the bytes already on disk, with the request headers
+/// and name hints it had (a download the engine lost after a restart has
+/// none left). Before any bytes, the name is still the server's to give.
+async fn readd_options(rpc: &Rpc, task: &Task) -> serde_json::Map<String, Value> {
+    let mut options = serde_json::Map::new();
+    if let Ok(Value::Object(old)) = rpc.call("aria2.getOption", vec![json!(task.row.id)]).await {
+        for key in KEPT_OPTIONS {
+            if let Some(value) = old.get(*key) {
+                options.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    // getOption joins headers with newlines; addUri takes a list.
+    if let Some(Value::String(lines)) = options.get("header") {
+        let lines: Vec<&str> = lines.lines().filter(|line| !line.trim().is_empty()).collect();
+        options.insert("header".into(), json!(lines));
+    }
+    options.insert("gid".into(), json!(task.row.id));
+    options.insert("dir".into(), json!(task.row.dir));
+    options.insert("continue".into(), json!("true"));
+    if task.files.len() == 1 && task.row.done_bytes > 0 {
+        options.insert("out".into(), json!(base_name(&task.files[0])));
     }
     options
+}
+
+/// Starts a failed download again under its own GID.
+async fn restart(rpc: &Rpc, task: &Task, options: serde_json::Map<String, Value>) -> Result<Value, String> {
+    let _ = rpc.call("aria2.removeDownloadResult", vec![json!(task.row.id)]).await;
+    rpc.call("aria2.addUri", vec![json!([task.row.url]), Value::Object(options)])
+        .await
+}
+
+/// After a 401 or 403, asks the browser which cookies it would send now and,
+/// when they differ from the download's, restarts it with them once. IDM
+/// does the same ("Change cookies, try again"): a session can expire or
+/// rotate between the click and the download, or while it waits paused.
+async fn retry_with_fresh_cookies(shared: Arc<Shared>, id: String) {
+    let Some(task) = select(&shared, std::slice::from_ref(&id), |task| task.row.status == TaskStatus::Failed).pop()
+    else {
+        return;
+    };
+    let Some(cookie) = crate::browser::fresh_cookies(&shared, &task.row.url).await else {
+        return;
+    };
+    let Some(rpc) = shared.current_rpc() else {
+        return;
+    };
+    let mut options = readd_options(&rpc, &task).await;
+    let mut headers: Vec<Value> = options.remove("header").map(into_list).unwrap_or_default();
+    let is_cookie = |line: &Value| line.as_str().is_some_and(|line| line.to_ascii_lowercase().starts_with("cookie:"));
+    let fresh = format!("Cookie: {cookie}");
+    if headers.iter().any(|line| line.as_str() == Some(fresh.as_str())) {
+        return; // The browser has nothing newer.
+    }
+    headers.retain(|line| !is_cookie(line));
+    headers.push(json!(fresh));
+    options.insert("header".into(), Value::Array(headers));
+    if restart(&rpc, &task, options).await.is_ok() {
+        finish_action(&shared, &rpc, std::slice::from_ref(&task)).await;
+    }
 }
 
 pub async fn pause_all(shared: &Shared) -> Result<(), String> {

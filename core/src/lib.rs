@@ -16,9 +16,11 @@ mod tasks;
 
 pub use settings::{CategoryRule, FileExists, Schedule, Settings};
 
+use serde_json::Value;
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{Notify, watch};
@@ -245,6 +247,9 @@ pub(crate) struct Shared {
     pub visible: AtomicBool,
     /// Connected browser extensions, for pushing capture rules.
     pub browsers: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    /// Questions to the browsers waiting for answers, by request ID.
+    pub browser_requests: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Value>>>,
+    pub next_request: AtomicU64,
     /// Stream probes running now; each gets an extra engine slot.
     pub probe_slots: Mutex<u32>,
     /// Set while yt-dlp and Deno are being downloaded.
@@ -324,6 +329,8 @@ impl DownloadCore {
             wake: Notify::new(),
             visible: AtomicBool::new(true),
             browsers: Mutex::new(Vec::new()),
+            browser_requests: Mutex::new(HashMap::new()),
+            next_request: AtomicU64::new(1),
             probe_slots: Mutex::new(0),
             tools_busy: AtomicBool::new(false),
         });
