@@ -73,6 +73,10 @@ Changing the sort column costs one frame of 35-45 ms; changing the search
 text, which resets the list, one of 70-90 ms. Scrolling 3 rows per frame,
 95-97% of frames take under 20 ms.
 
+Rechecked after the dialogs, Settings and the tray's status line were added
+(the tray counts queued and paused rows on every update): 60 live rows per
+update, median 0.77 ms and p95 0.96 ms on the UI thread with 5,001 rows.
+
 What made the list fast, in case it regresses:
 
 - Rows draw progress with a scaled rectangle. A `ProgressBar` re-runs its
@@ -94,7 +98,14 @@ What made the list fast, in case it regresses:
 | `DownloadItem.cs` | Row view model; raises a change per field |
 | `DownloadList.cs` | The visible collection; small reorders become moves |
 | `MainWindow.xaml(.cs)` | Title bar, sidebar, toolbar, list, dialogs, keys |
-| `TrayIcon.cs` | Notification-area icon (H.NotifyIcon) |
+| `TrayIcon.cs` | Notification-area icon (H.NotifyIcon) and its menu |
+| `ToolWindows.cs` | Sizing, placing and Enter/Esc for the small windows below |
+| `DownloadInfoWindow.xaml(.cs)` | Download File Info, and `NewDownloads`, where every new download goes |
+| `BatchDownloadWindow.xaml(.cs)` | The several-files list |
+| `ProgressWindow.xaml(.cs)` | One download's progress, details and completion |
+| `SettingsWindow.xaml(.cs)` | Settings pages; Open at sign-in through the Run key |
+| `SiteLogins.cs`, `LoginWindow.xaml(.cs)` | Site logins in Credential Manager, and Login Required |
+| `AddressWindow.xaml(.cs)` | Refresh download address |
 | `Format.cs`, `Native.cs` | Formatting, links, Win32 helpers |
 
 ## List styles (to port from macOS)
@@ -119,9 +130,11 @@ green, failed red, queued a tertiary gray. The macOS sources are
 ## Behavior checked on Windows 11
 
 - Tray icon (H.NotifyIcon 2.4.1): tooltip with the total speed, menu with
-  Show downloads, Resume all, Pause all and Exit; left click shows the window.
-  Efficiency mode stays off on purpose (`ForceCreate(false)`); it would
-  throttle downloads.
+  Show downloads, New download…, a status line ("No active downloads",
+  "5001 paused", "2 downloading · 257 KB/s"), Resume all and Pause all (off
+  when they would change nothing), Settings… and Exit; left click shows the
+  window. Efficiency mode stays off on purpose (`ForceCreate(false)`); it
+  would throttle downloads.
 - Single instance: a second launch exits and shows the running window.
 - Closing hides the window; Exit stops the engine within 2 s and leaves no
   `aria2-next.exe`. Killing the app also ends the engine
@@ -133,23 +146,39 @@ green, failed red, queued a tertiary gray. The macOS sources are
 - Light and dark mode, including switching while running.
 - Header alignment at 150%, and at 100% with the app forced to 96 DPI
   (`__COMPAT_LAYER=DPIUNAWARE`).
+- New Download, dropped links and browser downloads go through Download File
+  Info (one link) or the several-files list, which follow the running
+  download for its name and size; with confirmation off they start at once.
+  Cancel removes the download and its file.
+- A server that asks for a login (the test server's `/private/`, user
+  `opendm`, password `secret`) gets the saved login once, then Login
+  Required; Remember stores it in Credential Manager. aria2 reuses a login
+  it has accepted for the rest of its session, for every download from that
+  host.
+- Settings saves half a second after a change; speeds are entered in KB/s
+  and saved in bytes/s; Open at sign-in adds and removes the `OpenDM` Run
+  value. Logins can be added and removed there.
+- Refresh download address: waits, asks, and continues the old download
+  from the new address; closing the question treats the download as new.
+  The restart keeps the part done without gaps from the start of the file
+  and downloads the rest again.
 
-## Browser extension (to check on Windows)
-
-Written on macOS and not yet built or run on Windows:
+## Browser extension on Windows
 
 - `opendm-host.exe` ships next to `OpenDM.exe`. At each launch the app writes
-  `%LOCALAPPDATA%\OpenDM\browser\org.opendm.host.json` (and a Firefox
-  variant) and, with `reg add`, points `NativeMessagingHosts\org.opendm.host`
-  at them under `HKCU\Software` for Chrome, Edge, Chromium, Brave, Vivaldi
-  and Mozilla. Check that the keys exist after a launch.
-- The app listens on a named pipe, `\\.\pipe\opendm-browser-<hash>`, where the
-  hash comes from the data folder, created with `reject_remote_clients`. The
-  host type-checks for Windows, and so does the pipe server in
-  `core/src/browser.rs` on its own; neither has run there.
-- With OpenDM closed, a captured download should start it with `--background`
-  (tray only, no window). The host asks to leave the browser's job object
-  (`CREATE_BREAKAWAY_FROM_JOB`), so closing the browser must not close OpenDM.
-- Load `extension/` unpacked in Chrome or Edge and run through the flows in
-  [extension/README.md](../extension/README.md); `tests/browser/` drives them on
-  macOS and needs its paths adapted for Windows.
+  `<data>\browser\org.opendm.host.json` (and a Firefox variant) and points
+  `HKCU\Software\<browser>\NativeMessagingHosts\org.opendm.host` at them
+  for Chrome, Edge, Chromium, Brave, Vivaldi and Mozilla.
+- The app listens on `\\.\pipe\opendm-browser-<hash>`, the hash coming from
+  the data folder. With OpenDM closed, the host starts it with `--background`
+  and answers within a second. The app starts without the browser's pipe
+  handles; with them, the first answer never reached the browser.
+- The first hello installs `yt-dlp.exe` and `deno.exe` into `<data>\tools`,
+  and a YouTube page's formats come back through them.
+- `tests\browser\run.ps1` loads `extension/` unpacked in a throwaway Chrome
+  profile and checks capture (cookie, referer and user agent reach the
+  engine), Alt-click, the HLS quality menu and its MP4, the video button,
+  Download all links and the proxy hand-off: 25 of 25 pass in Chrome and in
+  Edge (`$env:CHROME` = msedge.exe). It quits a running OpenDM first, and
+  leaves the native-host registry keys pointing at its temporary profile
+  until OpenDM next starts. The Firefox test still runs on macOS only.

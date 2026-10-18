@@ -14,6 +14,12 @@ code simple: no extra layers, no MVVM framework. Match the macOS app's
 behavior (in `apple/Sources/OpenDM`), not its look: use WinUI's own controls
 and Fluent styling, dark mode, keyboard access.
 
+Status, 19 October 2026: everything in the next three sections is in the
+Windows app, and the checks in "Check on Windows too" have been run; see
+`windows/README.md` for what was checked and how. Still open: the Cards and
+List styles (`windows/README.md`, "List styles"), the Firefox browser test
+on Windows, and a light-mode and 100% pass over the new windows.
+
 ## What the macOS app has that Windows still lacks
 
 1. **Download File Info dialog** (`DownloadInfoDialog.swift`). Every new
