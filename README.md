@@ -7,12 +7,13 @@ workflow and dialogs, with native UIs on each platform. OpenDM is a working name
 | --- | --- |
 | `core/` | Rust core shared by both apps through UniFFI: aria2-next process supervision, JSON-RPC over WebSocket, task list, SQLite history, settings and file-type categories |
 | `apple/` | macOS app (Swift, AppKit) as a Swift package |
+| `windows/` | Windows app (C#, WinUI 3, unpackaged); see [windows/README.md](windows/README.md) |
 | `vendor/aria2-next/` | Pinned engine version and checksums; binaries are downloaded, not committed |
 | `scripts/` | Build, engine fetch and test-server scripts |
 | `docs/` | Research notes and design decisions |
 
-Windows (WinUI 3), the browser extension and the native messaging host come in
-later milestones; see [docs/research.md](docs/research.md).
+The browser extension and the native messaging host come in later milestones;
+see [docs/research.md](docs/research.md).
 
 ## Build the macOS app
 
@@ -50,6 +51,10 @@ reopening the core.
 
 `scripts/test-server.py` serves throttled files with Range support, for
 trying the app with many live downloads.
+
+On macOS with 5,060 rows and 60 live downloads, the list spends 0.1 ms per
+progress tick with the live rows off-screen, about 3 ms with 21 live rows on
+screen, and about 5 ms when sorted by speed (every tick re-sorts).
 
 ## License
 
