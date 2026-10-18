@@ -147,7 +147,9 @@
                                          template and visual states on every value change, which made
                                          each progress tick cost about 1 ms per visible row. Scaling
                                          the indicator needs no layout. -->
-                                    <Grid Height="3" VerticalAlignment="Center" Visibility="{x:Bind IsDeterminate, Mode=OneWay}">
+                                    <!-- The top margin moves the bar down 1 px to the middle of the
+                                         digits beside it; text sits low in its line box. -->
+                                    <Grid Height="3" Margin="0,2,0,0" VerticalAlignment="Center" Visibility="{x:Bind IsDeterminate, Mode=OneWay}">
                                         <Rectangle Height="1" VerticalAlignment="Center" RadiusX="0.5" RadiusY="0.5"
                                                    Fill="{ThemeResource ControlStrongStrokeColorDefaultBrush}" />
                                         <Grid>
@@ -163,7 +165,7 @@
                                         </Grid>
                                     </Grid>
                                     <ProgressBar x:Name="Busy" x:Load="{x:Bind IsIndeterminate, Mode=OneWay}" IsIndeterminate="True"
-                                                 VerticalAlignment="Center" />
+                                                 Margin="0,2,0,0" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind PercentText, Mode=OneWay}" HorizontalAlignment="Right"
                                                Style="{StaticResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
