@@ -8,6 +8,24 @@ internal static class Format
 
     public static string Bytes(ulong count)
     {
+        var (value, unit) = Scaled(count);
+        return unit == 0
+            ? $"{count} B"
+            : value.ToString(value < 10 ? "0.0" : "0", CultureInfo.CurrentCulture) + " " + Units[unit];
+    }
+
+    /// <summary>
+    /// A byte count rounded the way <see cref="Bytes"/> shows it, so sorting by
+    /// speed does not reorder rows whose speeds look the same.
+    /// </summary>
+    public static double Displayed(ulong count)
+    {
+        var (value, unit) = Scaled(count);
+        return unit == 0 ? count : Math.Round(value, value < 10 ? 1 : 0) * Math.Pow(1024, unit);
+    }
+
+    private static (double Value, int Unit) Scaled(ulong count)
+    {
         double value = count;
         var unit = 0;
         while (value >= 1024 && unit < Units.Length - 1)
@@ -15,9 +33,7 @@ internal static class Format
             value /= 1024;
             unit++;
         }
-        return unit == 0
-            ? $"{count} B"
-            : value.ToString(value < 10 ? "0.0" : "0", CultureInfo.CurrentCulture) + " " + Units[unit];
+        return (value, unit);
     }
 
     public static string Size(TaskRow row) => row.TotalBytes > 0 ? Bytes(row.TotalBytes) : "–";
