@@ -97,6 +97,18 @@
                 <ListView x:Name="Table" Grid.Row="2" Padding="12,0,12,12" SelectionMode="Extended"
                           SelectionChanged="Table_SelectionChanged" PreviewKeyDown="Table_PreviewKeyDown"
                           ContextRequested="Table_ContextRequested" DoubleTapped="Table_DoubleTapped">
+                    <!-- Rows realized off-screen keep their bindings and redraw on every
+                         progress tick, and a large cache also made fast scrolling stutter. -->
+                    <ListView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ItemsStackPanel CacheLength="1" />
+                        </ItemsPanelTemplate>
+                    </ListView.ItemsPanel>
+                    <!-- No reorder or add/delete animations: rows move on every tick
+                         while sorted by speed or time left. -->
+                    <ListView.ItemContainerTransitions>
+                        <TransitionCollection />
+                    </ListView.ItemContainerTransitions>
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
