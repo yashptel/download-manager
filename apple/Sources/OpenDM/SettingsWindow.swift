@@ -35,7 +35,7 @@ final class SettingsWindowController: NSWindowController {
             return item
         }
         tabs.addTabViewItem(tab("General", "gearshape", GeneralSettings()))
-        tabs.addTabViewItem(tab("Browser", "globe", BrowserSettings()))
+        tabs.addTabViewItem(tab("Browser", "puzzlepiece.extension", BrowserSettings()))
         tabs.addTabViewItem(tab("Categories", "folder", CategorySettings()))
         tabs.addTabViewItem(tab("Connection", "network", ConnectionSettings()))
         tabs.addTabViewItem(tab("Logins", "key", LoginSettings()))
@@ -168,10 +168,11 @@ private struct FolderRow: View {
 
 /// A whole number in a bordered field with its unit after it. Every field
 /// takes the same width and every unit the same slot, so the fields of a
-/// group line up in one column.
+/// group line up in one column. A group without units passes no unit, and
+/// its fields end at the row's edge like its switches.
 private struct NumberField: View {
     @Binding var value: Int
-    var unit = ""
+    var unit: String?
     var range: ClosedRange<Int> = 0...Int(Int32.max)
 
     private var clamped: Binding<Int> {
@@ -186,7 +187,7 @@ private struct NumberField: View {
                 .multilineTextAlignment(.trailing)
                 .monospacedDigit()
                 .frame(width: fieldWidth)
-            UnitLabel(unit)
+            if let unit { UnitLabel(unit) }
         }
     }
 }
@@ -206,22 +207,30 @@ private struct UnitLabel: View {
     }
 }
 
-/// A multi-line field that looks like one: inset text, the text
-/// background and a hairline border.
+/// A multi-line field that fills its form row, so the row's own rounded
+/// background is the field. Grey text stands in while it is empty.
 private struct EditorBox: View {
     @Binding var text: String
     var height: CGFloat
+    var placeholder = ""
     var monospaced = false
 
     var body: some View {
+        let font: Font = monospaced ? .body.monospaced() : .body
         TextEditor(text: $text)
-            .font(monospaced ? .body.monospaced() : .body)
+            .font(font)
             .scrollContentBackground(.hidden)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 6)
             .frame(height: height)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
+            .overlay(alignment: .topLeading) {
+                if text.isEmpty {
+                    // TextEditor insets its text by the line fragment padding.
+                    Text(placeholder).font(font).foregroundStyle(.tertiary)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+            }
+            // Line the text up with the labels of the rows around it.
+            .padding(.horizontal, -5)
     }
 }
 
@@ -309,11 +318,15 @@ private struct BrowserSettings: View {
             } footer: {
                 Note("Needs the OpenDM Connect extension. Alt-click a link to keep that download in the browser.")
             }
-            Section("File types to take over") {
+            Section {
                 EditorBox(text: model.words(\.captureExtensions), height: 76)
+            } header: {
+                Text("File types to take over")
+            } footer: {
+                Note("Separate them with spaces.")
             }
             Section {
-                EditorBox(text: model.words(\.captureExcludedSites, separator: "\n"), height: 60)
+                EditorBox(text: model.words(\.captureExcludedSites, separator: "\n"), height: 60, placeholder: "example.com")
             } header: {
                 Text("Never take downloads from these sites")
             } footer: {
@@ -341,24 +354,29 @@ private struct CategorySettings: View {
     @EnvironmentObject var model: SettingsModel
     @State private var selection: Int?
 
+    /// Rows by position: rules have no identity of their own.
+    private struct Row: Identifiable { let id: Int }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: CategoryRow.spacing) {
-                Text("Category").frame(width: CategoryRow.nameWidth, alignment: .leading)
-                Text("File types").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Folder").frame(width: CategoryRow.folderWidth, alignment: .leading)
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, CategoryRow.inset)
-            List(selection: $selection) {
-                ForEach(model.settings.categories.indices, id: \.self) { index in
-                    CategoryRow(rule: $model.settings.categories[index], downloadDir: model.settings.downloadDir)
-                        .tag(index)
+            Table(model.settings.categories.indices.map(Row.init), selection: $selection) {
+                TableColumn("Category") { row in
+                    TextField("Name", text: rule(row.id).name).labelsHidden().textFieldStyle(.plain)
+                        .padding(.leading, cellInset)
                 }
+                .width(min: 90, ideal: 120)
+                TableColumn("File types") { row in
+                    TextField("Extensions", text: extensions(row.id)).labelsHidden().textFieldStyle(.plain)
+                        .padding(.leading, cellInset)
+                }
+                .width(min: 140, ideal: 260)
+                TableColumn("Folder") { row in
+                    FolderCell(rule: rule(row.id), downloadDir: model.settings.downloadDir)
+                }
+                .width(min: 140, ideal: 200)
             }
-            .listStyle(.bordered(alternatesRowBackgrounds: true))
-            .frame(height: 230)
+            .tableStyle(.bordered(alternatesRowBackgrounds: true))
+            .frame(height: 240)
             HStack(spacing: 6) {
                 Button { addCategory() } label: { Image(systemName: "plus").frame(width: 16, height: 16) }
                     .help("Add a category")
@@ -374,6 +392,24 @@ private struct CategorySettings: View {
         .frame(width: tabWidth + 80)
     }
 
+    /// One rule, safe to read for a moment after it is removed.
+    private func rule(_ index: Int) -> Binding<CategoryRule> {
+        Binding(
+            get: { model.settings.categories.indices.contains(index) ? model.settings.categories[index] : CategoryRule(name: "", extensions: [], folder: "") },
+            set: { if model.settings.categories.indices.contains(index) { model.settings.categories[index] = $0 } }
+        )
+    }
+
+    private func extensions(_ index: Int) -> Binding<String> {
+        let rule = rule(index)
+        return Binding(
+            get: { rule.wrappedValue.extensions.joined(separator: " ") },
+            set: { text in
+                rule.wrappedValue.extensions = text.split(whereSeparator: { $0.isWhitespace || $0 == "," }).map { $0.lowercased() }
+            }
+        )
+    }
+
     private func addCategory() {
         model.settings.categories.append(CategoryRule(name: "New Category", extensions: [], folder: "New Category"))
         selection = model.settings.categories.count - 1
@@ -386,48 +422,29 @@ private struct CategorySettings: View {
     }
 }
 
-private struct CategoryRow: View {
-    static let nameWidth: CGFloat = 130
-    static let folderWidth: CGFloat = 210
-    static let spacing: CGFloat = 10
-    /// How far the bordered list's rows sit inside its border (measured on
-    /// macOS 26), so the headings line up with the text below them.
-    static let inset: CGFloat = 7
+/// Table cells start 2 pt left of their column titles (macOS 26); this
+/// lines the text up under the titles.
+private let cellInset: CGFloat = 2
 
+private struct FolderCell: View {
     @Binding var rule: CategoryRule
     let downloadDir: String
     @EnvironmentObject var model: SettingsModel
 
-    private var extensions: Binding<String> {
-        Binding(
-            get: { rule.extensions.joined(separator: " ") },
-            set: { text in
-                rule.extensions = text.split(whereSeparator: { $0.isWhitespace || $0 == "," }).map { $0.lowercased() }
-            }
-        )
-    }
-
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Self.spacing) {
-            TextField("Name", text: $rule.name)
-                .labelsHidden()
-                .frame(width: Self.nameWidth)
-            TextField("Extensions", text: extensions)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(rule.folder)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .help(rule.folder)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Choose…") {
-                    let current = rule.folder.hasPrefix("/") ? rule.folder : (downloadDir as NSString).appendingPathComponent(rule.folder)
-                    model.chooseFolder(from: current) { rule.folder = $0 }
-                }
-                .controlSize(.small)
+        HStack(spacing: 6) {
+            Text(rule.folder)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .help(rule.folder)
+                .padding(.leading, cellInset)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Choose…") {
+                let current = rule.folder.hasPrefix("/") ? rule.folder : (downloadDir as NSString).appendingPathComponent(rule.folder)
+                model.chooseFolder(from: current) { rule.folder = $0 }
             }
-            .frame(width: Self.folderWidth)
+            .controlSize(.small)
+            .buttonStyle(.bordered)
         }
     }
 }
@@ -441,21 +458,13 @@ private struct LoginSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Text("Site").frame(width: 300, alignment: .leading)
-                Text("User name")
+            Table(logins, selection: $selection) {
+                TableColumn("Site") { Text($0.site).lineLimit(1).truncationMode(.middle).padding(.leading, cellInset) }
+                    .width(min: 160, ideal: 320)
+                TableColumn("User name") { Text($0.user).lineLimit(1).padding(.leading, cellInset) }
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 7)
-            List(logins, selection: $selection) { login in
-                HStack(spacing: 10) {
-                    Text(login.site).frame(width: 300, alignment: .leading).lineLimit(1).truncationMode(.middle)
-                    Text(login.user).lineLimit(1)
-                }
-            }
-            .listStyle(.bordered(alternatesRowBackgrounds: true))
-            .frame(height: 200)
+            .tableStyle(.bordered(alternatesRowBackgrounds: true))
+            .frame(height: 220)
             .overlay {
                 if logins.isEmpty {
                     Text("No saved logins").foregroundStyle(.secondary)
@@ -548,7 +557,7 @@ private struct ConnectionSettings: View {
             }
             Section {
                 LabeledContent("Connections per server") {
-                    NumberField(value: model.number(\.maxConnectionsPerServer), range: 1...16)
+                    NumberField(value: model.number(\.maxConnectionsPerServer), unit: "", range: 1...16)
                 }
                 LabeledContent("Split each file into") {
                     NumberField(value: model.number(\.split), unit: "parts", range: 1...64)
@@ -578,20 +587,27 @@ private struct ConnectionSettings: View {
             } footer: {
                 Note("0 tries keeps trying until you stop the download.")
             }
-            Section("Proxy") {
-                TextField("Proxy", text: $model.settings.proxy, prompt: Text("http://user:password@host:8080"))
+            Section {
+                TextField("Proxy", text: $model.settings.proxy, prompt: Text(verbatim: "http://user:password@host:8080"))
                 TextField("Not for", text: $model.settings.noProxy, prompt: Text("localhost, .example.com"))
+            } header: {
+                Text("Proxy")
+            } footer: {
+                Note("For downloads you add yourself; empty connects directly. Downloads from the browser use the browser's proxy.")
             }
             Section {
                 TextField("User agent", text: $model.settings.userAgent, prompt: Text("The engine's own"))
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Headers for every download")
-                    EditorBox(text: model.words(\.customHeaders, separator: "\n"), height: 58, monospaced: true)
-                }
             } header: {
                 Text("Requests")
             } footer: {
-                Note("The user agent is for downloads you add yourself; the browser's keep the browser's. Headers are one \"Name: value\" per line.")
+                Note("For downloads you add yourself. Downloads from the browser keep the browser's user agent.")
+            }
+            Section {
+                EditorBox(text: model.words(\.customHeaders, separator: "\n"), height: 58, placeholder: "Name: value", monospaced: true)
+            } header: {
+                Text("Headers for every download")
+            } footer: {
+                Note("One per line.")
             }
             Section {
                 Picker("When the file already exists", selection: $model.settings.fileExists) {
@@ -618,7 +634,7 @@ private struct SchedulerSettings: View {
             } footer: {
                 Note("Starts the downloads waiting in the list, such as those added with Download Later.")
             }
-            Section {
+            if model.settings.schedule.enabled { Section {
                 LabeledContent("Start at") {
                     DatePicker("Start at", selection: time(\.start), displayedComponents: .hourAndMinute).labelsHidden()
                 }
@@ -631,18 +647,18 @@ private struct SchedulerSettings: View {
                         DatePicker("Pause at", selection: time(\.stop), displayedComponents: .hourAndMinute).labelsHidden()
                     }
                 }
-                LabeledContent("On") {
+                LabeledContent("Days") {
                     HStack(spacing: 4) {
                         ForEach(0..<7, id: \.self) { day in
-                            Toggle(days[day], isOn: dayBinding(UInt8(day)))
+                            // One width for every day, whatever its letter.
+                            Toggle(isOn: dayBinding(UInt8(day))) { Text(days[day]).frame(width: 16) }
                                 .toggleStyle(.button)
                                 .help(dayNames[day])
-                                .frame(minWidth: 28)
+                                .accessibilityLabel(dayNames[day])
                         }
                     }
                 }
-            }
-            .disabled(!model.settings.schedule.enabled)
+            } }
         }
         .formStyle(.grouped)
         .frame(width: tabWidth)
@@ -681,12 +697,12 @@ private struct EngineSettings: View {
     var body: some View {
         Form {
             Section {
-                EditorBox(text: $model.settings.engineExtra, height: 200, monospaced: true)
+                EditorBox(text: $model.settings.engineExtra, height: 200, placeholder: "lowest-speed-limit=10K", monospaced: true)
             } header: {
                 Text("aria2 options")
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Note("One option per line as name=value, for example lowest-speed-limit=10K. They are applied to the running engine, override the same options set elsewhere in Settings, and an option the engine rejects is reported.")
+                    Note("One option per line, as name=value. They apply right away and win over the same settings on the other tabs. OpenDM tells you if the engine rejects one.")
                     Link("All aria2 options", destination: URL(string: "https://aria2.github.io/manual/en/html/aria2c.html#options")!)
                         .font(.callout)
                 }
