@@ -63,6 +63,8 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
+        // Caption buttons follow the light/dark app mode, also when it changes while running.
+        AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "OpenDM.ico"));
         CenterOnScreen(1120, 700);
         AppWindow.Closing += AppWindow_Closing;
