@@ -161,7 +161,7 @@ final class DownloadInfoModel: ObservableObject {
             if !categoryEdited, !folderChosen { category = info.category; folder = info.dir }
             size = info.size ?? size
         case .failure(let error):
-            problem = error.localizedDescription
+            problem = error.message
         }
     }
 

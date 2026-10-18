@@ -140,3 +140,12 @@ func iconButton(_ symbol: String, _ label: String, pointSize: CGFloat = 14) -> N
     button.setAccessibilityLabel(label)
     return button
 }
+
+extension Error {
+    /// The core's message on its own: UniFFI describes its errors as the
+    /// Swift case, such as Failed(message: "...").
+    var message: String {
+        if let error = self as? CoreError, case .Failed(let message) = error { return message }
+        return localizedDescription
+    }
+}

@@ -104,7 +104,10 @@ final class SettingsModel: ObservableObject {
         do {
             try core.setSettings(settings: settings)
         } catch {
-            NSAlert(error: error).runModal()
+            let alert = NSAlert()
+            alert.messageText = "The settings could not be saved"
+            alert.informativeText = error.message
+            alert.runModal()
         }
     }
 

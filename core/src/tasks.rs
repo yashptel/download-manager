@@ -657,7 +657,11 @@ pub async fn inspect(shared: &Shared, download: &NewDownload) -> Result<FileInfo
             .await?;
         let status = number(&answer, "status").unwrap_or(0);
         if status >= 400 {
-            return Err(format!("The server answered {status}"));
+            return Err(match status {
+                401 | 403 => format!("The server refused OpenDM (HTTP {status})"),
+                404 | 410 => format!("The file is not on the server (HTTP {status})"),
+                _ => format!("The server answered HTTP {status}"),
+            });
         }
         let named = matches!(download.filename_source.as_deref(), Some("browser" | "user"));
         if let Some(name) = answer["filename"].as_str().filter(|name| !name.is_empty() && !named) {

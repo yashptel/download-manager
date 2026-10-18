@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let alert = NSAlert()
             alert.alertStyle = .critical
             alert.messageText = "OpenDM could not open its data"
-            alert.informativeText = error.localizedDescription
+            alert.informativeText = error.message
             alert.runModal()
             NSApp.terminate(nil)
             return
@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 _ = try core.installBrowserHost(hostPath: host)
             } catch {
-                NSLog("OpenDM: could not register the browser host: %@", error.localizedDescription)
+                NSLog("OpenDM: could not register the browser host: %@", error.message)
             }
         }
     }

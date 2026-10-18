@@ -6,10 +6,12 @@
 //! an `id` and gets the same `id` back; the app also pushes capture rules
 //! whenever they change.
 //!
-//! A captured download is "accepted" as soon as the app has it, and the
-//! browser then drops its copy; the app's own dialog decides the rest. When
-//! the app cannot take it, the answer is "fallback" and the browser keeps
-//! downloading, so a download is never lost.
+//! A captured download is "accepted" once the app has it, and the browser
+//! then drops its copy; the app's own dialog decides the rest. When the app
+//! cannot take it, the answer is "fallback" and the browser keeps
+//! downloading, so a download is never lost. That includes a server that
+//! refuses the app while it served the browser: some sites behind Cloudflare
+//! tell browsers from other clients by more than cookies.
 //!
 //! "inspect" reads a stream's video and audio tracks for the extension's
 //! quality menu, and "site" asks yt-dlp what a page offers. Both take a
@@ -18,6 +20,7 @@
 use crate::{BrowserSource, EngineState, NewDownload, Shared};
 use serde_json::{Value, json};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -25,6 +28,9 @@ use tokio::sync::mpsc;
 const MAX_ITEMS: usize = 10_000;
 /// The extension sends a playlist only when it is smaller than this.
 const MAX_MANIFEST: usize = 2 * 1024 * 1024;
+/// How long a captured download waits for the server's first answer before
+/// the app takes it anyway.
+const CAPTURE_CHECK: Duration = Duration::from_secs(8);
 
 /// Request headers the engine sets itself, or that would break a download.
 const SKIPPED_HEADERS: &[&str] = &[
@@ -130,13 +136,14 @@ async fn connection<S: AsyncRead + AsyncWrite + Send + 'static>(shared: Arc<Shar
             // A browser with the extension: video sites will be asked for.
             crate::sites::prepare(shared.clone());
         }
-        if message["type"] == "inspect" || message["type"] == "site" {
+        let captured = message["type"] == "download" && message["source"] == "download";
+        if message["type"] == "inspect" || message["type"] == "site" || captured {
             let (shared, sender) = (shared.clone(), sender.clone());
             tokio::spawn(async move {
-                let mut answer = if message["type"] == "site" {
-                    site(&shared, &message).await
-                } else {
-                    inspect(&shared, &message).await
+                let mut answer = match message["type"].as_str() {
+                    Some("site") => site(&shared, &message).await,
+                    Some("inspect") => inspect(&shared, &message).await,
+                    _ => capture(&shared, &message).await,
                 };
                 answer["id"] = message["id"].clone();
                 let _ = sender.send(answer.to_string());
@@ -192,6 +199,28 @@ fn respond(shared: &Shared, message: &Value) -> Option<Value> {
     }
 }
 
+/// A download the browser already started. The app takes it only when the
+/// server answers the app as well; otherwise the browser keeps it. A slow
+/// server gets the benefit of the doubt.
+async fn capture(shared: &Shared, message: &Value) -> Value {
+    let capturing = shared.settings.lock().unwrap().browser_capture && !engine_down(shared);
+    let download = message["items"].get(0).and_then(parse_item);
+    if let Some(download) = download.filter(|download| capturing && download.media_kind.is_none()) {
+        let check = tokio::time::timeout(CAPTURE_CHECK, crate::tasks::inspect(shared, &download)).await;
+        if let Ok(Err(reason)) = check {
+            return json!({ "result": "fallback", "reason": reason });
+        }
+    }
+    respond(shared, message).unwrap_or_else(|| json!({ "result": "fallback", "reason": "not a download" }))
+}
+
+fn engine_down(shared: &Shared) -> bool {
+    matches!(
+        *shared.engine_state.lock().unwrap(),
+        EngineState::Failed { .. } | EngineState::Stopped
+    )
+}
+
 /// Hands the downloads in `message` to the app, or says why it cannot take them.
 fn accept(shared: &Shared, message: &Value) -> Result<(), String> {
     let source = match message["source"].as_str() {
@@ -204,10 +233,7 @@ fn accept(shared: &Shared, message: &Value) -> Result<(), String> {
     if source == BrowserSource::Download && !shared.settings.lock().unwrap().browser_capture {
         return Err("capture is off".into());
     }
-    if matches!(
-        *shared.engine_state.lock().unwrap(),
-        EngineState::Failed { .. } | EngineState::Stopped
-    ) {
+    if engine_down(shared) {
         return Err("the download engine is not running".into());
     }
     let downloads: Vec<NewDownload> = message["items"]
