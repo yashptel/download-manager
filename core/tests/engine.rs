@@ -462,3 +462,38 @@ fn an_expired_download_continues_from_a_new_address() {
     assert_eq!(core.rows().len(), 1, "the same download, not a new one");
     core.shutdown();
 }
+
+
+#[test]
+fn a_download_goes_through_the_proxy_the_browser_used() {
+    let Some(engine) = engine_path() else {
+        eprintln!("skipped: no aria2-next binary (run scripts/fetch-engine.sh)");
+        return;
+    };
+    // The test server answers any request line, so it also serves as a proxy
+    // for a host that does not resolve: only the proxy can reach it.
+    let proxy_port = serve();
+    let temp = tempfile::tempdir().unwrap();
+    let downloads = temp.path().join("downloads");
+    let core = open(&engine, &temp.path().join("data"), &downloads, Arc::new(Recorder::default()));
+    core.start();
+    wait_until("engine start", Duration::from_secs(15), || {
+        core.engine_state() == EngineState::Running
+    });
+    let id = core.add_downloads(
+        vec![NewDownload {
+            url: "http://files.opendm.invalid/proxied.bin".into(),
+            proxy: Some(format!("http://127.0.0.1:{proxy_port}")),
+            ..NewDownload::default()
+        }],
+        false,
+    )[0]
+    .clone();
+    wait_until("completion through the proxy", Duration::from_secs(60), || {
+        row(&core, &id).is_some_and(|row| matches!(row.status, TaskStatus::Complete | TaskStatus::Failed))
+    });
+    let done = row(&core, &id).unwrap();
+    assert_eq!(done.status, TaskStatus::Complete, "{:?}", done.error);
+    assert_eq!(std::fs::read(done.path.unwrap()).unwrap().len() as u64, FILE_SIZE);
+    core.shutdown();
+}

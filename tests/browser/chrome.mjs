@@ -236,6 +236,17 @@ try {
   check("all links are collected", links.length === 2, JSON.stringify(links));
   const handed = await sw.evaluate("Promise.all(" + JSON.stringify(links) + ".map(u => requestItem(u, { referrer: '" + SITE + "/' }))).then(items => handOver('links', items))");
   check("OpenDM accepts the links", handed === true);
+
+  // 8. A proxy another extension (a VPN) put in place goes with the item;
+  // the extension itself plays that extension here.
+  await sw.evaluate("chrome.proxy.settings.set({ value: { mode: 'fixed_servers', rules: { singleProxy: { scheme: 'socks5', host: '10.9.8.7', port: 1080 }, bypassList: ['*.internal.example'] } }, scope: 'regular' }).then(() => 'ok')");
+  const proxied = await sw.evaluate("requestItem('https://files.example.com/a.zip').then(i => i.proxy)");
+  check("the browser's proxy goes with a download", proxied === "socks5://10.9.8.7:1080", proxied);
+  const bypassed = await sw.evaluate("requestItem('https://cdn.internal.example/a.zip').then(i => i.proxy ?? 'none')");
+  check("an address the proxy skips goes without it", bypassed === "none", bypassed);
+  await sw.evaluate("chrome.proxy.settings.clear({ scope: 'regular' }).then(() => 'ok')");
+  const cleared = await sw.evaluate("requestItem('https://files.example.com/a.zip').then(i => i.proxy ?? 'none')");
+  check("without one, no proxy is sent", cleared === "none", cleared);
 } catch (error) {
   check("test ran to the end", false, error.stack);
 } finally {

@@ -391,6 +391,16 @@ fn parse_item(item: &Value) -> Option<NewDownload> {
         })
     };
     let media_kind = text("mediaKind").filter(|kind| kind == "hls" || kind == "dash");
+    // Only a plain proxy address: no login, nothing the engine would read as
+    // another option.
+    let proxy = text("proxy").filter(|proxy| {
+        let rest = proxy.strip_prefix("http://").or_else(|| proxy.strip_prefix("socks5://"));
+        rest.is_some_and(|rest| {
+            !rest.is_empty()
+                && rest.len() <= 300
+                && rest.chars().all(|c| c.is_ascii_alphanumeric() || ".-:[]".contains(c))
+        })
+    });
     Some(NewDownload {
         url,
         filename_source: filename.as_ref().and(filename_source),
@@ -413,6 +423,7 @@ fn parse_item(item: &Value) -> Option<NewDownload> {
         media_format: text("mediaFormat").filter(|format| format == "mp4" || format == "mkv"),
         media_quality: text("mediaQuality").filter(|quality| quality.len() <= 200),
         category: None,
+        proxy,
         task_id: None,
     })
 }
@@ -452,6 +463,17 @@ mod tests {
             vec!["Authorization: Bearer t".to_string()]
         );
         assert_eq!(download.size, Some(1234));
+        assert_eq!(download.proxy, None);
+    }
+
+    #[test]
+    fn a_browser_proxy_passes_only_as_a_plain_address() {
+        let proxy = |value: &str| parse_item(&json!({ "url": "https://a.b/c", "proxy": value })).unwrap().proxy;
+        assert_eq!(proxy("http://10.0.0.2:3128").as_deref(), Some("http://10.0.0.2:3128"));
+        assert_eq!(proxy("socks5://[::1]:1080").as_deref(), Some("socks5://[::1]:1080"));
+        assert_eq!(proxy("socks5://user:pw@proxy:1080"), None);
+        assert_eq!(proxy("https://proxy:443"), None);
+        assert_eq!(proxy("http://proxy:80\n--dir=/"), None);
     }
 
     #[test]

@@ -178,7 +178,7 @@ const MAX_REQUESTS = 400;
 function rememberRequest(details) {
   if (details.tabId < 0 && details.type !== "main_frame") return;
   requests.delete(details.url);
-  requests.set(details.url, { headers: details.requestHeaders ?? [], tabId: details.tabId });
+  requests.set(details.url, { headers: details.requestHeaders ?? [], tabId: details.tabId, proxy: proxyAddress(details.proxyInfo) });
   if (requests.size > MAX_REQUESTS) requests.delete(requests.keys().next().value);
 }
 
@@ -213,7 +213,67 @@ async function requestItem(url, { referrer = "", headers, storeId } = {}) {
     referrer: header(seen, "referer") || referrer,
     cookie: await cookieFor(url, seen, storeId),
     userAgent: header(seen, "user-agent") || navigator.userAgent,
+    proxy: requests.get(url)?.proxy ?? (await extensionProxy(url)),
   };
+}
+
+// ─── The browser's proxy ─────────────────────────────────────────────────
+//
+// A VPN or proxy extension sends the browser's requests through its proxy,
+// and a site may refuse the same request coming straight from the app. The
+// app goes the same way when it can: a plain HTTP or SOCKS5 proxy. A proxy
+// that needs a login cannot be shared, as only the extension knows it.
+
+/** "http://host:port" for Firefox's per-request proxyInfo. */
+function proxyAddress(info) {
+  if (!info || info.username || !info.host || !info.port) return undefined;
+  const scheme = { http: "http", socks: "socks5" }[info.type];
+  return scheme ? scheme + "://" + bracketed(info.host) + ":" + info.port : undefined;
+}
+
+function bracketed(host) {
+  return host.includes(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+}
+
+/** In Chromium, the fixed proxy another extension put in place, unless the
+ * URL bypasses it. A PAC script cannot be evaluated here. */
+async function extensionProxy(url) {
+  if (isFirefox || !api.proxy?.settings) return undefined;
+  let config;
+  try {
+    config = await api.proxy.settings.get({});
+  } catch {
+    return undefined;
+  }
+  if (!/^controlled_by_(other|this)_extensions?$/.test(config?.levelOfControl ?? "")) return undefined;
+  const value = config.value ?? {};
+  if (value.mode !== "fixed_servers" || !value.rules) return undefined;
+  const target = new URL(url);
+  const rules = value.rules;
+  if (bypasses(target.hostname, rules.bypassList ?? [])) return undefined;
+  const server =
+    rules.singleProxy ??
+    (target.protocol === "https:" ? rules.proxyForHttps : target.protocol === "http:" ? rules.proxyForHttp : undefined) ??
+    rules.fallbackProxy;
+  if (!server?.host) return undefined;
+  const scheme = { http: "http", socks5: "socks5" }[server.scheme ?? "http"];
+  const port = server.port ?? (scheme === "http" ? 80 : 1080);
+  return scheme ? scheme + "://" + bracketed(server.host) + ":" + port : undefined;
+}
+
+/** Chromium's bypass rules for a host: patterns such as "*.example.com",
+ * "<local>", and loopback addresses unless "<-loopback>" is listed. */
+function bypasses(host, list) {
+  const loopback = host === "localhost" || host.endsWith(".localhost") || /^127\./.test(host) || host === "[::1]";
+  if (loopback && !list.includes("<-loopback>")) return true;
+  return list.some((rule) => {
+    if (rule === "<local>") return !host.includes(".");
+    if (rule.startsWith("<")) return false;
+    const pattern = rule.replace(/^[a-z]+:\/\//i, "").replace(/:\d+$/, "").toLowerCase();
+    if (pattern.startsWith("*.")) return host.endsWith(pattern.slice(1)) || host === pattern.slice(2);
+    if (pattern.startsWith(".")) return host.endsWith(pattern);
+    return host === pattern;
+  });
 }
 
 // ─── Capturing browser downloads ─────────────────────────────────────────

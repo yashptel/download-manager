@@ -592,6 +592,11 @@ impl NewDownload {
         if !headers.is_empty() {
             options.insert("header".into(), json!(headers));
         }
+        if let Some(proxy) = self.proxy.as_deref().filter(|proxy| !proxy.is_empty()) {
+            options.insert("all-proxy".into(), json!(proxy));
+            // OpenDM's own exceptions belong to its own proxy.
+            options.insert("no-proxy".into(), json!(""));
+        }
     }
 
     /// The name this download most likely gets, before any server answers.
@@ -1035,6 +1040,8 @@ const KEPT_OPTIONS: &[&str] = &[
     "filename-hint",
     "filename-hint-source",
     "header",
+    "all-proxy",
+    "no-proxy",
     "http-user",
     "http-passwd",
     "referer",
@@ -1212,7 +1219,7 @@ pub async fn refresh_address(shared: &Shared, id: &str, download: &NewDownload) 
             }
         }
         let mut options = readd_options(&rpc, &task).await;
-        for key in ["header", "referer", "user-agent"] {
+        for key in ["header", "referer", "user-agent", "all-proxy", "no-proxy"] {
             options.remove(key);
         }
         let mut fresh = serde_json::Map::new();

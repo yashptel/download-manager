@@ -138,6 +138,11 @@ pub struct NewDownload {
     /// A category chosen by the user instead of the one the name implies.
     #[uniffi(default = None)]
     pub category: Option<String>,
+    /// The proxy the browser sent this request through, set by a VPN or proxy
+    /// extension: "http://host:port" or "socks5://host:port". The download
+    /// goes the same way instead of through OpenDM's own proxy setting.
+    #[uniffi(default = None)]
+    pub proxy: Option<String>,
     /// Set when the download is already running under this ID: a captured
     /// download the app started while asking the user about it.
     #[uniffi(default = None)]
