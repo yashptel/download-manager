@@ -7,11 +7,12 @@
 //   node scripts/try-extension.mjs firefox [url...]
 //
 // Start build/OpenDM.app first (or let the extension start it). Chrome 137+
-// ignores --load-extension, so the extension is loaded over a DevTools pipe;
-// Chrome quits when that pipe closes, so this script keeps running until you
-// close that Chrome window. Firefox gets the extension as a temporary add-on,
-// which lasts until Firefox quits. Profiles live in ~/.opendm-dev.
-import { execFileSync, spawn } from "node:child_process";
+// ignores --load-extension, and a Chrome started with the DevTools pipe that
+// could load it makes YouTube stop playback after a minute. So the extension
+// is loaded once by hand (the script says how) and stays in the profile.
+// Firefox gets the extension as a temporary add-on, which lasts until Firefox
+// quits. Profiles live in ~/.opendm-dev.
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,7 @@ const REPO = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 const EXTENSION = REPO + "/extension";
 const HOST = REPO + "/build/OpenDM.app/Contents/MacOS/opendm-host";
 const DEV = process.env.HOME + "/.opendm-dev";
+const CHROME_ID = "nkhhoiejpomapjkeomdbflaicnnjclfj";
 const [browser, ...urls] = process.argv.slice(2);
 
 if (!fs.existsSync(HOST)) {
@@ -46,38 +48,27 @@ async function chrome() {
     // Same as manifest() in host/src/lib.rs.
     JSON.stringify({
       name: "org.opendm.host", description: "OpenDM", path: HOST, type: "stdio",
-      allowed_origins: ["chrome-extension://nkhhoiejpomapjkeomdbflaicnnjclfj/"],
+      allowed_origins: ["chrome-extension://" + CHROME_ID + "/"],
     }, null, 2),
   );
-  const child = spawn(
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    ["--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check",
-      "--remote-debugging-pipe", "--enable-unsafe-extension-debugging", ...urls],
-    { detached: true, stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] },
+  let installed = false;
+  try {
+    const prefs = JSON.parse(fs.readFileSync(profile + "/Default/Secure Preferences", "utf8"));
+    installed = Boolean(prefs.extensions?.settings?.[CHROME_ID]);
+  } catch {}
+  const flags = ["--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check"];
+  execFileSync("/usr/bin/open", ["-n", "-a", "Google Chrome", "--args", ...flags, ...(installed ? urls : ["chrome://extensions"])]);
+  if (installed) {
+    console.log("Chrome is open with OpenDM Connect.");
+    return;
+  }
+  console.log(
+    "Chrome is open on its extensions page. Once, for this profile: turn on Developer mode,\n" +
+      "choose Load unpacked and pick " + EXTENSION + ".\n" +
+      "It then stays installed; this script reloads it from disk each time.",
   );
-  // DevTools pipe: NUL-terminated JSON messages, answers matched by id.
-  const waiting = new Map();
-  let buffer = "";
-  child.stdio[4].on("data", (chunk) => {
-    buffer += chunk;
-    for (let end; (end = buffer.indexOf("\0")) >= 0; buffer = buffer.slice(end + 1)) {
-      const answer = JSON.parse(buffer.slice(0, end));
-      waiting.get(answer.id)?.(answer);
-    }
-  });
-  let next = 1;
-  const call = (method, params) =>
-    new Promise((resolve) => {
-      const id = next++;
-      waiting.set(id, resolve);
-      child.stdio[3].write(JSON.stringify({ id, method, params }) + "\0");
-    });
-  const loaded = await call("Extensions.loadUnpacked", { path: EXTENSION });
-  if (loaded.error) throw new Error(loaded.error.message);
-  const id = loaded.result.id;
-  console.log("Chrome is open with OpenDM Connect (" + id + "). Close that Chrome to end this script.");
-  child.on("exit", () => process.exit(0));
 }
+
 
 async function firefox() {
   const profile = DEV + "/firefox-profile";
