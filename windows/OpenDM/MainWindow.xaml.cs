@@ -4,6 +4,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
 using Windows.UI.Core;
@@ -63,7 +64,14 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
+        // Caption buttons follow the light/dark app mode, also when it changes while running.
+        AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "OpenDM.ico"));
+        Root.Loaded += (_, _) =>
+        {
+            ShowAppIcon();
+            Content.XamlRoot.Changed += (_, _) => ShowAppIcon();
+        };
         CenterOnScreen(1120, 700);
         AppWindow.Closing += AppWindow_Closing;
         AppWindow.Changed += AppWindow_Changed;
@@ -79,6 +87,7 @@ public sealed partial class MainWindow : Window
         };
         BuildNavigation(core.Settings().Categories.Select(rule => rule.Name).Append("Other"));
         Table.ItemsSource = visible;
+        store.LayoutRoot = Root;
 
         store.RowsChanged += OnRowsChanged;
         store.RowsRemoved += _ =>
@@ -111,6 +120,18 @@ public sealed partial class MainWindow : Window
     {
         exiting = true;
         Close();
+    }
+
+    /// <summary>The title bar icon drawn for the screen's scale, so it stays crisp.</summary>
+    private void ShowAppIcon()
+    {
+        var pixels = 16 * Content.XamlRoot.RasterizationScale;
+        var size = pixels <= 16 ? 16 : pixels <= 24 ? 24 : 32;
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", $"OpenDM-{size}.png");
+        if (AppIcon.Source is not BitmapImage { UriSource.LocalPath: var current } || current != path)
+        {
+            AppIcon.Source = new BitmapImage(new Uri(path));
+        }
     }
 
     private void CenterOnScreen(int width, int height)
@@ -166,7 +187,8 @@ public sealed partial class MainWindow : Window
             Content = title,
             Icon = new FontIcon { Glyph = glyph },
             Tag = itemFilter,
-            InfoBadge = new InfoBadge { Visibility = Visibility.Collapsed },
+            // Down 1 px, to the middle of the label's capitals.
+            InfoBadge = new InfoBadge { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 2, 0, 0) },
         };
         navItems[itemFilter] = item;
         Nav.MenuItems.Add(item);
@@ -217,7 +239,8 @@ public sealed partial class MainWindow : Window
             }
             statusChanged |= old is null || old.Status != row.Status;
             structural |= shownIds.Contains(row.Id) != Matches(row)
-                || (old is not null && sortColumn is { } column && Compare(old, row, column) != 0);
+                || (old is not null && sortColumn is { } column
+                    && Compare(SortKey(old, column), SortKey(row, column), column) != 0);
         }
         if (structural) Rebuild();
         if (recount) Recount();
@@ -230,14 +253,22 @@ public sealed partial class MainWindow : Window
             || row.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase)
             || row.Url.Contains(search, StringComparison.OrdinalIgnoreCase));
 
-    private static int Compare(TaskRow a, TaskRow b, SortColumn column) => column switch
+    /// <summary>What a column sorts by; speed as displayed, so equal-looking speeds tie.</summary>
+    private static (double Number, string? Text) SortKey(TaskRow row, SortColumn column) => column switch
     {
-        SortColumn.Name => Native.CompareNatural(a.Name, b.Name),
-        SortColumn.Size => a.TotalBytes.CompareTo(b.TotalBytes),
-        SortColumn.Progress => a.Progress.CompareTo(b.Progress),
-        SortColumn.Speed => a.Speed.CompareTo(b.Speed),
-        SortColumn.Eta => (a.EtaSecs ?? ulong.MaxValue).CompareTo(b.EtaSecs ?? ulong.MaxValue),
-        _ => string.Compare(Format.Status(a), Format.Status(b), StringComparison.CurrentCulture),
+        SortColumn.Name => (0, row.Name),
+        SortColumn.Size => (row.TotalBytes, null),
+        SortColumn.Progress => (row.Progress, null),
+        SortColumn.Speed => (Format.Displayed(row.Speed), null),
+        SortColumn.Eta => (row.EtaSecs ?? double.MaxValue, null),
+        _ => (0, Format.Status(row)),
+    };
+
+    private static int Compare((double Number, string? Text) a, (double Number, string? Text) b, SortColumn column) => column switch
+    {
+        SortColumn.Name => Native.CompareNatural(a.Text!, b.Text!),
+        SortColumn.Status => string.Compare(a.Text, b.Text, StringComparison.CurrentCulture),
+        _ => a.Number.CompareTo(b.Number),
     };
 
     private void Rebuild()
@@ -247,21 +278,31 @@ public sealed partial class MainWindow : Window
         if (sortColumn is { } column)
         {
             var sign = sortAscending ? 1 : -1;
-            next.Sort((a, b) =>
+            // Rows that compare equal keep their current order, so live values that
+            // jitter around the same displayed number do not swap rows back and forth.
+            var shown = new Dictionary<DownloadItem, int>(visible.Count, ReferenceEqualityComparer.Instance);
+            for (var i = 0; i < visible.Count; i++)
             {
-                var order = Compare(a.Row, b.Row, column) * sign;
+                shown[visible[i]] = i;
+            }
+            var keyed = next
+                .Select(item => (Item: item, Key: SortKey(item.Row, column), Shown: shown.GetValueOrDefault(item, int.MaxValue)))
+                .ToArray();
+            Array.Sort(keyed, (a, b) =>
+            {
+                var order = Compare(a.Key, b.Key, column) * sign;
                 if (order != 0) return order;
-                order = a.Row.AddedAt.CompareTo(b.Row.AddedAt);
-                return order != 0 ? order : string.CompareOrdinal(a.Id, b.Id);
+                order = a.Shown.CompareTo(b.Shown);
+                if (order != 0) return order;
+                order = a.Item.Row.AddedAt.CompareTo(b.Item.Row.AddedAt);
+                return order != 0 ? order : string.CompareOrdinal(a.Item.Id, b.Item.Id);
             });
+            next = keyed.Select(entry => entry.Item).ToList();
         }
         shownIds = next.Select(item => item.Id).ToHashSet();
-        if (visible.ApplyOrder(next) && selected.Count > 0)
+        foreach (var item in visible.ApplyOrder(next))
         {
-            foreach (var item in visible.Where(item => selected.Contains(item.Id)))
-            {
-                Table.SelectedItems.Add(item);
-            }
+            if (selected.Contains(item.Id)) Table.SelectedItems.Add(item);
         }
         EmptyText.Text = store.Items.Count == 0
             ? "Drop a link here or press Ctrl+N to add a download."
@@ -283,10 +324,34 @@ public sealed partial class MainWindow : Window
         }
         foreach (var (key, (button, title)) in headers)
         {
-            button.Content = key == column ? $"{title} {(sortAscending ? "\u25B2" : "\u25BC")}" : title;
+            button.Content = key == column ? SortedHeader(title, sortAscending) : title;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button,
+                key == column ? $"{title}, sorted {(sortAscending ? "ascending" : "descending")}" : title);
         }
         Rebuild();
     }
+
+    /// <summary>
+    /// A header title followed by an up or down arrow from Segoe Fluent Icons,
+    /// as tall as the capitals and centered on them.
+    /// </summary>
+    private static StackPanel SortedHeader(string title, bool ascending) => new()
+    {
+        Orientation = Orientation.Horizontal,
+        Spacing = 6,
+        Children =
+        {
+            new TextBlock { Text = title },
+            new FontIcon
+            {
+                Glyph = ascending ? "\uE74A" : "\uE74B",
+                FontSize = 10,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 2, 0, 0),
+            },
+        },
+    };
 
     private void Search_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {

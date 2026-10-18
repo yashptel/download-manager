@@ -2,8 +2,9 @@
 //!
 //! Each tick asks aria2 only for the active downloads (one round trip).
 //! Tasks named by an engine notification, tasks that left the active list,
-//! and tasks the table has never seen get a full status in a second round
-//! trip. Only rows that actually changed are sent to the UI.
+//! and active tasks whose files the engine has not reported yet get a full
+//! status in a second round trip. Only rows that actually changed are sent
+//! to the UI.
 
 use crate::db::progress;
 use crate::engine::random_hex;
@@ -110,6 +111,14 @@ impl Table {
     pub fn stats(&self) -> GlobalStats {
         self.stats
     }
+
+    /// When a new batch of downloads starts. Each pasted link takes the next
+    /// millisecond to keep its order, so a large batch reaches into the future;
+    /// the next batch starts after it and never sorts into its middle.
+    pub fn next_added_at(&self, now: i64) -> i64 {
+        let newest = self.tasks.values().map(|task| task.row.added_at).max();
+        newest.map_or(now, |newest| now.max(newest + 1))
+    }
 }
 
 fn is_unfinished(status: TaskStatus) -> bool {
@@ -162,10 +171,17 @@ async fn tick(shared: &Shared, rpc: &Rpc) -> Result<(), String> {
         let mut table = shared.tasks.lock().unwrap();
         let mut need = std::mem::take(&mut table.dirty);
         need.extend(table.active.difference(&active_ids).cloned());
+        // The engine names the file only after the server answers, which can
+        // be after the notification that started the download.
         need.extend(
             active_ids
                 .iter()
-                .filter(|id| !table.tasks.contains_key(*id))
+                .filter(|id| {
+                    table
+                        .tasks
+                        .get(*id)
+                        .is_none_or(|task| task.files.is_empty())
+                })
                 .cloned(),
         );
         table.active = active_ids;
@@ -358,14 +374,14 @@ fn update_from_engine(task: &mut Task, status: &Value, settings: &Settings, now:
         row.connections = connections as u32;
     }
     if let Some(dir) = status["dir"].as_str() {
-        row.dir = dir.to_string();
+        row.dir = native_path(dir);
     }
     if let Some(files) = status["files"].as_array() {
         task.files = files
             .iter()
             .filter_map(|file| file["path"].as_str())
             .filter(|path| !path.is_empty())
-            .map(String::from)
+            .map(native_path)
             .collect();
         if row.url.is_empty()
             && let Some(uri) = files
@@ -451,7 +467,7 @@ pub async fn add_urls(
 ) -> Result<(), String> {
     let rpc = shared.wait_rpc().await?;
     let settings = shared.settings.lock().unwrap().clone();
-    let now = now_ms();
+    let start = shared.tasks.lock().unwrap().next_added_at(now_ms());
     let mut new_tasks = Vec::new();
     let mut calls = Vec::new();
     for (index, url) in urls
@@ -466,7 +482,7 @@ pub async fn add_urls(
             id.clone(),
             url.to_string(),
             String::new(),
-            now + index as i64,
+            start + index as i64,
         );
         task.row.category = settings.classify(&task.row.name);
         task.row.dir = settings
@@ -811,6 +827,15 @@ fn base_name(path: &str) -> &str {
         .unwrap_or(path)
 }
 
+/// aria2 reports Windows paths with forward slashes.
+fn native_path(path: &str) -> String {
+    if cfg!(windows) {
+        path.replace('/', "\\")
+    } else {
+        path.to_string()
+    }
+}
+
 /// A display name from the last URL path segment, percent-decoded once.
 pub fn name_from_url(url: &str) -> String {
     let without_query = url.split(['?', '#']).next().unwrap_or(url);
@@ -880,6 +905,17 @@ mod tests {
     }
 
     #[test]
+    fn a_new_batch_starts_after_the_previous_one() {
+        let mut table = Table::default();
+        assert_eq!(table.next_added_at(1_000), 1_000);
+        // A pasted batch of 5,000 links took 1,000 .. 5,999.
+        let last = Task::new("b".into(), String::new(), String::new(), 5_999);
+        table.tasks.insert("b".into(), last);
+        assert_eq!(table.next_added_at(3_000), 6_000);
+        assert_eq!(table.next_added_at(9_000), 9_000);
+    }
+
+    #[test]
     fn http_status_fills_the_row() {
         let mut task = Task::new("a1".into(), String::new(), String::new(), 5);
         let status = json!({
@@ -892,7 +928,12 @@ mod tests {
         assert_eq!(row.status, TaskStatus::Downloading);
         assert_eq!(row.name, "tool.zip");
         assert_eq!(row.url, "https://example.com/get?id=7");
-        assert_eq!(row.path.as_deref(), Some("/dl/Compressed/tool.zip"));
+        let expected_path = if cfg!(windows) {
+            "\\dl\\Compressed\\tool.zip"
+        } else {
+            "/dl/Compressed/tool.zip"
+        };
+        assert_eq!(row.path.as_deref(), Some(expected_path));
         assert_eq!(row.category, "Compressed");
         assert_eq!(row.progress, 0.25);
         assert_eq!(row.eta_secs, Some(15));

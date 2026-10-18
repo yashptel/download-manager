@@ -1,4 +1,4 @@
-# OpenDM
+# <img src="docs/icon.svg" width="40" height="40" align="top" alt=""> OpenDM
 
 An open-source download manager for macOS and Windows: IDM's browser-capture
 workflow and dialogs, with native UIs on each platform. OpenDM is a working name.
@@ -9,11 +9,15 @@ workflow and dialogs, with native UIs on each platform. OpenDM is a working name
 | `apple/` | macOS app (Swift, AppKit) as a Swift package |
 | `windows/` | Windows app (C#, WinUI 3, unpackaged); see [windows/README.md](windows/README.md) |
 | `vendor/aria2-next/` | Pinned engine version and checksums; binaries are downloaded, not committed |
-| `scripts/` | Build, engine fetch and test-server scripts |
-| `docs/` | Research notes and design decisions |
+| `scripts/` | Build, engine fetch, icon and test-server scripts |
+| `docs/` | Research notes, design decisions and the icon |
 
 The browser extension and the native messaging host come in later milestones;
 see [docs/research.md](docs/research.md).
+
+The icon is drawn by `scripts/make-icons.py` (Python with Pillow), which writes
+`docs/icon.svg`, the Windows app icon, title-bar PNGs and light/dark tray icons,
+and the macOS `.icns`.
 
 ## Build the macOS app
 
@@ -57,6 +61,9 @@ progress tick with the live rows off-screen, about 3 ms with 21 live rows on
 screen, and 4–7 ms when sorted by speed (every tick re-sorts; Cards 3.9 ms,
 List 5.2 ms, Columns 7.0 ms on average). Switching between the Cards, List
 and Columns styles takes 50–100 ms at that size.
+On Windows with 5,123 rows and 60 live downloads it is 0.1 ms, 1.9 ms with 16
+live rows on screen and 5.5 ms sorted by speed; see
+[windows/README.md](windows/README.md#measure).
 
 ## License
 

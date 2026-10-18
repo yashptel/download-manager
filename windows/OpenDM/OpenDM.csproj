@@ -12,6 +12,8 @@
     <!-- Unpackaged desktop app that carries the Windows App SDK with it. -->
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Puts OpenDM.pri and the compiled XAML into the publish folder. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
     <SelfContained>true</SelfContained>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\OpenDM.ico</ApplicationIcon>
@@ -31,6 +33,8 @@
 
   <ItemGroup>
     <Content Include="Assets\OpenDM.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\OpenDM-*.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Tray-*.ico" CopyToOutputDirectory="PreserveNewest" />
     <!-- Filled by scripts/build-windows.ps1: opendm_core.dll, aria2-next.exe and licenses. -->
     <Content Include="Native\**" Link="%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 
 namespace OpenDM;
 
@@ -17,6 +20,19 @@ internal sealed class DownloadStore
     public DownloadStore(DispatcherQueue dispatcher)
     {
         Listener = new CoreEvents(this, dispatcher);
+        if (TimingPath is not null)
+        {
+            TimeSpan? last = null;
+            CompositionTarget.Rendering += (_, args) =>
+            {
+                var now = ((RenderingEventArgs)args).RenderingTime;
+                if (last is { } previous && (now - previous).TotalMilliseconds > 20)
+                {
+                    File.AppendAllText(TimingPath, $"-1,{(now - previous).TotalMilliseconds:F1}\n");
+                }
+                last = now;
+            };
+        }
     }
 
     public CoreListener Listener { get; }
@@ -32,6 +48,16 @@ internal sealed class DownloadStore
     public event Action<IReadOnlySet<string>>? RowsRemoved;
     public event Action? StatusChanged;
     public event Action<string>? ErrorRaised;
+
+    /// <summary>
+    /// With OPENDM_UI_TIMING set to a file path, each batch of changed rows
+    /// appends "rows,total,apply" there: the UI-thread milliseconds to apply
+    /// it, the total including the layout pass it causes in
+    /// <see cref="LayoutRoot"/>. Frames longer than 20 ms append "-1,ms".
+    /// </summary>
+    private static readonly string? TimingPath = Environment.GetEnvironmentVariable("OPENDM_UI_TIMING");
+
+    public UIElement? LayoutRoot { get; set; }
 
     public void Load(DownloadCore core)
     {
@@ -86,7 +112,20 @@ internal sealed class DownloadStore
     /// <summary>Receives core events on a background thread and replays them, in order, on the UI thread.</summary>
     private sealed class CoreEvents(DownloadStore store, DispatcherQueue dispatcher) : CoreListener
     {
-        public void RowsChanged(TaskRow[] rows) => Post(() => store.Apply(rows));
+        public void RowsChanged(TaskRow[] rows) => Post(() =>
+        {
+            if (TimingPath is null)
+            {
+                store.Apply(rows);
+                return;
+            }
+            var start = Stopwatch.GetTimestamp();
+            store.Apply(rows);
+            var applied = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            store.LayoutRoot?.UpdateLayout();
+            var elapsed = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            File.AppendAllText(TimingPath, $"{rows.Length},{elapsed:F3},{applied:F3}\n");
+        });
 
         public void RowsRemoved(string[] ids) => Post(() => store.Remove(ids));
 

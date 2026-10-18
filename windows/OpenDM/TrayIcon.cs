@@ -1,18 +1,24 @@
 using H.NotifyIcon;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.Win32;
+using Windows.UI.ViewManagement;
 
 namespace OpenDM;
 
 /// <summary>
 /// Notification-area icon: total speed in the tooltip, and quick controls.
-/// The native popup menu runs each item's Command, so items use commands
-/// rather than Click handlers.
+/// Like the system's own tray icons it is a single color that follows the
+/// taskbar's light or dark mode. The native popup menu runs each item's
+/// Command, so items use commands rather than Click handlers.
 /// </summary>
 internal sealed class TrayIcon : IDisposable
 {
     private readonly TaskbarIcon icon;
+    private readonly UISettings settings = new();
+    private bool? lightTaskbar;
 
     public TrayIcon(DownloadStore store, DownloadCore core, Action showWindow, Action quit)
     {
@@ -28,13 +34,15 @@ internal sealed class TrayIcon : IDisposable
         icon = new TaskbarIcon
         {
             ToolTipText = "OpenDM",
-            IconSource = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "OpenDM.ico"))),
             ContextFlyout = menu,
             LeftClickCommand = show,
             NoLeftClickDelay = true,
         };
+        FollowTaskbarTheme();
         // Efficiency mode would throttle the process, and with it the downloads.
         icon.ForceCreate(enablesEfficiencyMode: false);
+        var dispatcher = DispatcherQueue.GetForCurrentThread();
+        settings.ColorValuesChanged += (_, _) => dispatcher.TryEnqueue(FollowTaskbarTheme);
 
         store.StatusChanged += () =>
         {
@@ -47,6 +55,17 @@ internal sealed class TrayIcon : IDisposable
     }
 
     public void Dispose() => icon.Dispose();
+
+    private void FollowTaskbarTheme()
+    {
+        // The taskbar follows the "Windows mode" setting, which can differ from the app mode.
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        var light = key?.GetValue("SystemUsesLightTheme") is int value && value != 0;
+        if (light == lightTaskbar) return;
+        lightTaskbar = light;
+        var file = light ? "Tray-light.ico" : "Tray-dark.ico";
+        icon.IconSource = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", file)));
+    }
 
     private static XamlUICommand Command(Action action)
     {

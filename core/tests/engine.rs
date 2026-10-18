@@ -226,6 +226,10 @@ fn survives_an_engine_crash_and_an_app_restart() {
     assert_eq!(done.total_bytes, FILE_SIZE);
     let path = PathBuf::from(done.path.clone().unwrap());
     assert!(
+        !cfg!(windows) || !path.to_string_lossy().contains('/'),
+        "paths should use backslashes on Windows: {path:?}"
+    );
+    assert!(
         same_file(&path, &downloads.join("data.bin")),
         "unexpected path {path:?}"
     );

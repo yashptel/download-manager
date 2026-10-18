@@ -4,8 +4,8 @@ namespace OpenDM;
 
 /// <summary>
 /// One row of the download list. The store updates it in place and each
-/// changed field raises its own notification, so a progress tick redraws
-/// only the cells that changed.
+/// displayed value that changed raises its own notification, so a progress
+/// tick touches only the cells whose text or bar actually changed.
 /// </summary>
 public sealed class DownloadItem : INotifyPropertyChanged
 {
@@ -23,8 +23,10 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public string Url => Row.Url;
     public string Glyph => Format.Glyph(Row.Category);
     public string SizeText => Format.Size(Row);
-    public double ProgressValue => Row.Progress < 0 ? 0 : Row.Progress * 100;
+    /// <summary>0 to 1; the width of the progress indicator.</summary>
+    public double Fraction => Math.Clamp(Row.Progress, 0, 1);
     public bool IsIndeterminate => Row.Progress < 0 && Row.Status == TaskStatus.Downloading;
+    public bool IsDeterminate => !IsIndeterminate;
     public string PercentText => Format.Percent(Row);
     public string SpeedText => Format.Speed(Row.Speed);
     public string EtaText => Format.Eta(Row.EtaSecs);
@@ -32,28 +34,32 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public bool IsPaused => Row.Status == TaskStatus.Paused;
     public bool IsFailed => Row.Status == TaskStatus.Failed;
     public bool IsNotFailed => !IsFailed;
+    public bool IsRunningOrDone => !IsPaused && !IsFailed;
 
     internal void Update(TaskRow row)
     {
-        var old = Row;
+        var (name, glyph, size, fraction, indeterminate, percent) = (Name, Glyph, SizeText, Fraction, IsIndeterminate, PercentText);
+        var (speed, eta, status, paused, failed) = (SpeedText, EtaText, StatusText, IsPaused, IsFailed);
         Row = row;
-        if (old.Name != row.Name) Raise(nameof(Name));
-        if (old.Category != row.Category) Raise(nameof(Glyph));
-        if (old.TotalBytes != row.TotalBytes) Raise(nameof(SizeText));
-        if (old.Progress != row.Progress || old.Status != row.Status)
+        if (Name != name) Raise(nameof(Name));
+        if (Glyph != glyph) Raise(nameof(Glyph));
+        if (SizeText != size) Raise(nameof(SizeText));
+        if (Fraction != fraction) Raise(nameof(Fraction));
+        if (IsIndeterminate != indeterminate)
         {
-            Raise(nameof(ProgressValue));
             Raise(nameof(IsIndeterminate));
-            Raise(nameof(PercentText));
+            Raise(nameof(IsDeterminate));
         }
-        if (old.Speed != row.Speed) Raise(nameof(SpeedText));
-        if (old.EtaSecs != row.EtaSecs) Raise(nameof(EtaText));
-        if (old.Status != row.Status || old.Error != row.Error)
+        if (PercentText != percent) Raise(nameof(PercentText));
+        if (SpeedText != speed) Raise(nameof(SpeedText));
+        if (EtaText != eta) Raise(nameof(EtaText));
+        if (StatusText != status) Raise(nameof(StatusText));
+        if (IsPaused != paused || IsFailed != failed)
         {
-            Raise(nameof(StatusText));
             Raise(nameof(IsPaused));
             Raise(nameof(IsFailed));
             Raise(nameof(IsNotFailed));
+            Raise(nameof(IsRunningOrDone));
         }
     }
 
