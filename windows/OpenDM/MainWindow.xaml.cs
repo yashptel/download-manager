@@ -79,6 +79,7 @@ public sealed partial class MainWindow : Window
         };
         BuildNavigation(core.Settings().Categories.Select(rule => rule.Name).Append("Other"));
         Table.ItemsSource = visible;
+        store.LayoutRoot = Root;
 
         store.RowsChanged += OnRowsChanged;
         store.RowsRemoved += _ =>
