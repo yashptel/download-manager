@@ -525,10 +525,28 @@ public sealed partial class MainWindow : Window
         Add("Pause", rows.Any(CanPause), () => Pause(rows));
         menu.Items.Add(new MenuFlyoutSeparator());
         Add("Copy address", true, () => CopyAddresses(rows));
+        Add("Refresh download address\u2026", rows.Count == 1 && rows[0].Status != TaskStatus.Complete, () => RefreshAddress(rows[0]));
         menu.Items.Add(new MenuFlyoutSeparator());
         Add("Remove", true, () => _ = Remove(rows, false));
         Add("Remove and delete files\u2026", true, () => _ = Remove(rows, true));
         return menu;
+    }
+
+    private async void RefreshAddress(TaskRow row)
+    {
+        try
+        {
+            AddressRefresh.Start(row, store, core);
+        }
+        catch (CoreException.Failed error)
+        {
+            await ShowDialog(new ContentDialog
+            {
+                Title = "This download cannot get a new address",
+                Content = error.message,
+                CloseButtonText = "OK",
+            });
+        }
     }
 
     // Adding downloads
