@@ -6,6 +6,8 @@
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>OpenDM</string>
+    <key>CFBundleIconFile</key>
+    <string>OpenDM</string>
     <key>CFBundleIdentifier</key>
     <string>org.opendm.OpenDM</string>
     <key>CFBundleInfoDictionaryVersion</key>

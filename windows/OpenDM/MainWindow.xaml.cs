@@ -4,6 +4,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
 using Windows.UI.Core;
@@ -66,6 +67,11 @@ public sealed partial class MainWindow : Window
         // Caption buttons follow the light/dark app mode, also when it changes while running.
         AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "OpenDM.ico"));
+        Root.Loaded += (_, _) =>
+        {
+            ShowAppIcon();
+            Content.XamlRoot.Changed += (_, _) => ShowAppIcon();
+        };
         CenterOnScreen(1120, 700);
         AppWindow.Closing += AppWindow_Closing;
         AppWindow.Changed += AppWindow_Changed;
@@ -114,6 +120,18 @@ public sealed partial class MainWindow : Window
     {
         exiting = true;
         Close();
+    }
+
+    /// <summary>The title bar icon drawn for the screen's scale, so it stays crisp.</summary>
+    private void ShowAppIcon()
+    {
+        var pixels = 16 * Content.XamlRoot.RasterizationScale;
+        var size = pixels <= 16 ? 16 : pixels <= 24 ? 24 : 32;
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", $"OpenDM-{size}.png");
+        if (AppIcon.Source is not BitmapImage { UriSource.LocalPath: var current } || current != path)
+        {
+            AppIcon.Source = new BitmapImage(new Uri(path));
+        }
     }
 
     private void CenterOnScreen(int width, int height)
