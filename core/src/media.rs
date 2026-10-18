@@ -3,8 +3,10 @@
 //! The engine reads the playlist: a hidden task with
 //! `media-pause-after-probe` stops as soon as the presentation is
 //! parsed, its `media.tracks` are the answer, and the task is removed again.
-//! Track IDs are stable, so the download the user then picks is an ordinary
-//! new task with `media-video` and `media-audio` set.
+//! The download the user then picks is an ordinary new task with
+//! `media-video` and `media-audio` set. Track IDs come from the playlist
+//! URLs, which some servers (YouTube) sign afresh on every request, so the
+//! extension sends the same playlist text (`media-input`) with both.
 
 use crate::engine::random_hex;
 use crate::rpc::Rpc;

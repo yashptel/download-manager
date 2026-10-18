@@ -525,9 +525,26 @@ async function mediaItem(tab, entry) {
     : seen.filter((h) => ["origin", "authorization"].includes(h.name.toLowerCase()) || /^x-/i.test(h.name));
   const filename = titleName(entry.site?.title || tab?.title, entry.kind);
   const stream = isStream(entry)
-    ? { mediaKind: entry.kind.toLowerCase(), mediaManifest: entry.content || undefined }
+    ? { mediaKind: entry.kind.toLowerCase(), mediaManifest: await manifestText(entry) }
     : {};
   return { ...item, headers, filename, filenameSource: filename ? "title" : undefined, ...stream };
+}
+
+/** The stream's playlist, fetched once and then always the same text.
+ *
+ * The engine names tracks after their playlist URLs, and some servers sign
+ * those URLs afresh on every request (YouTube does), so a playlist fetched
+ * again for the download would not have the track the menu offered. The
+ * menu's probe and the download both read this one copy instead. */
+async function manifestText(entry) {
+  if (entry.content) return entry.content;
+  entry.fetching ??= fetch(entry.url, { credentials: "include" })
+    .then((response) => (response.ok ? response.text() : undefined))
+    .then((text) => (text && text.length <= 2 * 1024 * 1024 ? text : undefined))
+    .catch(() => undefined);
+  const text = await entry.fetching;
+  if (text) entry.content ??= text;
+  return entry.content || undefined;
 }
 
 /** The stream's tracks, read by the app's engine; kept for a while. */

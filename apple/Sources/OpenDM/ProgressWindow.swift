@@ -194,10 +194,10 @@ struct DownloadProgressView: View {
 
     @ViewBuilder
     private func running(_ row: TaskRow) -> some View {
-        if row.progress >= 0 {
-            StatusBar(value: min(row.progress, 1), color: Color(nsColor: StatusLook.of(row).color))
-        } else {
+        if row.progress < 0 && row.status == .downloading {
             ProgressView().progressViewStyle(.linear)
+        } else {
+            StatusBar(value: min(max(row.progress, 0), 1), color: Color(nsColor: StatusLook.of(row).color))
         }
         let downloading = row.status == .downloading
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 6) {
