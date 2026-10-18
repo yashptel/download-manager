@@ -12,6 +12,8 @@
     <!-- Unpackaged desktop app that carries the Windows App SDK with it. -->
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Puts OpenDM.pri and the compiled XAML into the publish folder. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
     <SelfContained>true</SelfContained>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\OpenDM.ico</ApplicationIcon>
