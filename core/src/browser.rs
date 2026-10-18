@@ -215,7 +215,8 @@ fn respond(shared: &Shared, message: &Value) -> Option<Value> {
 /// it once the server answers; a refusal leaves it to the browser. A server
 /// slower than `CAPTURE_CHECK` gets the benefit of the doubt.
 async fn capture(shared: &Shared, message: &Value) -> Value {
-    let capturing = shared.settings.lock().unwrap().browser_capture && !engine_down(shared);
+    let waiting = shared.waiting_address.lock().unwrap().is_some();
+    let capturing = shared.settings.lock().unwrap().browser_capture && !engine_down(shared) && !waiting;
     let single = message["items"]
         .as_array()
         .filter(|items| items.len() == 1)
@@ -312,6 +313,16 @@ fn accept(shared: &Shared, message: &Value, started: Option<String>) -> Result<(
     }
     if let Some(first) = downloads.first_mut() {
         first.task_id = started;
+    }
+    // The download the app is waiting for to renew an expired one.
+    if downloads.len() == 1
+        && downloads[0].task_id.is_none()
+        && downloads[0].media_kind.is_none()
+        && matches!(source, BrowserSource::Download | BrowserSource::Link)
+        && let Some(id) = shared.waiting_address.lock().unwrap().take()
+    {
+        shared.listener.new_address(id, downloads.remove(0));
+        return Ok(());
     }
     shared.listener.browser_downloads(downloads, source);
     Ok(())

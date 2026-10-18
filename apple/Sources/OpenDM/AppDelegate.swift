@@ -26,6 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.load(from: core)
         ProgressWindowController.store = store
         NewDownloads.store = store
+        store.onNewAddress = { [weak self] id, download in
+            guard let core = self?.core else { return }
+            AddressRefresh.received(id: id, download: download, core: core)
+        }
         store.onLoginNeeded = { [weak self] id, url in
             guard let core = self?.core else { return }
             LoginPrompt.handle(id: id, url: url, core: core)

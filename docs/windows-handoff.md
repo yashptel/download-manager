@@ -107,6 +107,24 @@ cookies did not fix. The macOS app (`SiteLogins.swift`):
 - Settings gets a Logins tab between Connection and Scheduler: Site and User
   name columns, + (site, user name, password) and −.
 
+## Refresh download address
+
+`CoreListener` also has `NewAddress(id, download)`. The list's context menu
+has "Refresh Download Address…" for one unfinished download
+(`AddressRefresh.swift`):
+
+- `core.WaitForAddress(id)` returns the page the download came from (or
+  null); it throws for streams and finished downloads, with a message to
+  show. Open the page in the default browser and show a small, non-floating
+  panel: "Waiting for a new address for “name”", what to do ("Start the
+  same download there again, and OpenDM takes its new address and continues
+  from 16 KB of 6.3 MB"), and Cancel (`core.StopWaitingForAddress()`).
+- The next download a browser hands over arrives at `NewAddress` instead
+  of `BrowserDownloads`. Ask "Is this the new address for “name”?" with the
+  new name, size and address (and a warning when the sizes differ): "Use
+  This Address" calls `core.RefreshAddress(id, download)` and shows the
+  progress window; "Download It Separately" handles it as a new download.
+
 ## Check on Windows too
 
 - **Open at login and the tray.** General has an "Open at login" switch on

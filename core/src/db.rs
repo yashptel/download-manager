@@ -8,7 +8,7 @@ use crate::{TaskRow, TaskStatus};
 use rusqlite::{Connection, params};
 use std::path::Path;
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = "
 CREATE TABLE downloads (
@@ -27,7 +27,8 @@ CREATE TABLE downloads (
     files       TEXT NOT NULL,
     media       INTEGER NOT NULL,
     move_dir    TEXT,
-    move_name   TEXT
+    move_name   TEXT,
+    page        TEXT
 );
 CREATE INDEX downloads_added_at ON downloads(added_at);
 ";
@@ -51,15 +52,17 @@ impl Db {
                     "BEGIN; {SCHEMA} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
                 ))
                 .map_err(|error| error.to_string())?,
-            // 2 adds the folder and name a running download moves to when done.
-            1 => conn
-                .execute_batch(
-                    "BEGIN;
-                     ALTER TABLE downloads ADD COLUMN move_dir TEXT;
-                     ALTER TABLE downloads ADD COLUMN move_name TEXT;
-                     PRAGMA user_version = 2;
-                     COMMIT;",
-                )
+            // 2 adds the folder and name a running download moves to when
+            // done; 3 the page it came from.
+            1 | 2 => conn
+                .execute_batch(&format!(
+                    "BEGIN; {} ALTER TABLE downloads ADD COLUMN page TEXT; PRAGMA user_version = 3; COMMIT;",
+                    if version == 1 {
+                        "ALTER TABLE downloads ADD COLUMN move_dir TEXT; ALTER TABLE downloads ADD COLUMN move_name TEXT;"
+                    } else {
+                        ""
+                    }
+                ))
                 .map_err(|error| error.to_string())?,
             SCHEMA_VERSION => {}
             newer => {
@@ -76,7 +79,7 @@ impl Db {
             .conn
             .prepare(
                 "SELECT id, url, name, dir, path, category, status, total_bytes, done_bytes, error,
-                        added_at, finished_at, files, media, move_dir, move_name
+                        added_at, finished_at, files, media, move_dir, move_name, page
                  FROM downloads ORDER BY added_at, id",
             )
             .map_err(|error| error.to_string())?;
@@ -111,6 +114,7 @@ impl Db {
                     media: row.get::<_, i64>(13)? != 0,
                     move_dir: row.get(14)?,
                     move_name: row.get(15)?,
+                    page: row.get(16)?,
                     cookies_refreshed: false,
                 })
             })
@@ -128,8 +132,8 @@ impl Db {
                 .prepare_cached(
                     "INSERT OR REPLACE INTO downloads
                      (id, url, name, dir, path, category, status, total_bytes, done_bytes, error,
-                      added_at, finished_at, files, media, move_dir, move_name)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                      added_at, finished_at, files, media, move_dir, move_name, page)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                 )
                 .map_err(|error| error.to_string())?;
             for task in tasks {
@@ -152,6 +156,7 @@ impl Db {
                         task.media as i64,
                         task.move_dir,
                         task.move_name,
+                        task.page,
                     ])
                     .map_err(|error| error.to_string())?;
             }
@@ -243,7 +248,7 @@ mod tests {
     fn opens_a_first_release_history_and_keeps_its_rows() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("history.db");
-        let v1 = SCHEMA.replace(",\n    move_dir    TEXT,\n    move_name   TEXT", "");
+        let v1 = SCHEMA.replace(",\n    move_dir    TEXT,\n    move_name   TEXT,\n    page        TEXT", "");
         assert!(!v1.contains("move_dir"));
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(&format!("{v1} PRAGMA user_version = 1;")).unwrap();

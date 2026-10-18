@@ -551,6 +551,8 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         add("Pause", #selector(contextPause), enabled: rows.contains { $0.status == .downloading || $0.status == .queued })
         menu.addItem(.separator())
         add("Copy Address", #selector(contextCopy))
+        add("Refresh Download Address…", #selector(contextRefreshAddress),
+            enabled: rows.count == 1 && rows[0].status != .complete)
         menu.addItem(.separator())
         add("Remove", #selector(contextRemove))
         add("Remove and Delete Files…", #selector(contextDelete))
@@ -561,6 +563,10 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     @objc private func contextResume() { resume(clickedRows()) }
     @objc private func contextPause() { pause(clickedRows()) }
     @objc private func contextCopy() { copyAddresses(clickedRows()) }
+    @objc private func contextRefreshAddress() {
+        guard let row = clickedRows().first else { return }
+        AddressRefresh.start(id: row.id, core: core)
+    }
     @objc private func contextRemove() { remove(clickedRows(), deletingFiles: false) }
     @objc private func contextDelete() { remove(clickedRows(), deletingFiles: true) }
 

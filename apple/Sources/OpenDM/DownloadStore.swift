@@ -34,6 +34,8 @@ final class DownloadStore {
     var onBrowserDownloads: (([NewDownload], BrowserSource) -> Void)?
     /// A server wants a user name and password for a download (ID, URL).
     var onLoginNeeded: ((String, String) -> Void)?
+    /// The new address for a download waiting for one (ID, download).
+    var onNewAddress: ((String, NewDownload) -> Void)?
 
     private struct WeakObserver { weak var value: DownloadStoreObserver? }
     private var observers: [WeakObserver] = []
@@ -116,6 +118,9 @@ private final class Listener: CoreListener, @unchecked Sendable {
     }
     func loginNeeded(id: String, url: String) {
         onMain { $0.onLoginNeeded?(id, url) }
+    }
+    func newAddress(id: String, download: NewDownload) {
+        onMain { $0.onNewAddress?(id, download) }
     }
 
     private func onMain(_ body: @escaping @MainActor (DownloadStore) -> Void) {

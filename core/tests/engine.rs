@@ -75,6 +75,7 @@ impl CoreListener for Recorder {
     fn login_needed(&self, id: String, url: String) {
         self.logins.lock().unwrap().push((id, url));
     }
+    fn new_address(&self, _id: String, _download: NewDownload) {}
 }
 
 /// Byte `i` of every served file.
@@ -122,6 +123,10 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
         }
         if line.contains(" /flaky/") {
             flaky = FLAKY.load(Ordering::SeqCst);
+        }
+        // An address that has expired partway through.
+        if line.contains(" /expires/") {
+            flaky = true;
         }
         // u:p
         if line.eq_ignore_ascii_case("authorization: basic dTpw") {
@@ -402,5 +407,58 @@ fn a_download_that_failed_partway_continues_into_a_correct_file() {
     assert_eq!(bytes.len() as u64, FILE_SIZE);
     let first_wrong = bytes.iter().enumerate().position(|(index, byte)| *byte != byte_at(index as u64));
     assert_eq!(first_wrong, None, "the file should be correct throughout");
+    core.shutdown();
+}
+
+
+#[test]
+fn an_expired_download_continues_from_a_new_address() {
+    let Some(engine) = engine_path() else {
+        eprintln!("skipped: no aria2-next binary (run scripts/fetch-engine.sh)");
+        return;
+    };
+    let port = serve();
+    let temp = tempfile::tempdir().unwrap();
+    let downloads = temp.path().join("downloads");
+    let core = open(&engine, &temp.path().join("data"), &downloads, Arc::new(Recorder::default()));
+    let mut settings = core.settings();
+    settings.max_tries = 1;
+    settings.retry_wait = 0;
+    core.set_settings(settings).unwrap();
+    core.start();
+    wait_until("engine start", Duration::from_secs(15), || {
+        core.engine_state() == EngineState::Running
+    });
+
+    let page = format!("http://127.0.0.1:{port}/downloads.html");
+    let id = core.add_downloads(
+        vec![NewDownload {
+            url: format!("http://127.0.0.1:{port}/expires/movie.bin"),
+            referer: Some(page.clone()),
+            ..NewDownload::default()
+        }],
+        false,
+    )[0]
+    .clone();
+    wait_until("the failure", Duration::from_secs(30), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Failed)
+    });
+    assert!(row(&core, &id).unwrap().done_bytes > 0);
+
+    assert_eq!(core.wait_for_address(id.clone()).unwrap(), Some(page));
+    core.stop_waiting_for_address();
+    let fresh = format!("http://127.0.0.1:{port}/files/movie.bin?token=new");
+    core.refresh_address(id.clone(), NewDownload { url: fresh.clone(), ..NewDownload::default() });
+    wait_until("completion at the new address", Duration::from_secs(60), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Complete)
+    });
+    let done = row(&core, &id).unwrap();
+    assert_eq!(done.url, fresh);
+    assert_eq!(done.name, "movie.bin");
+    let bytes = std::fs::read(done.path.unwrap()).unwrap();
+    assert_eq!(bytes.len() as u64, FILE_SIZE);
+    let first_wrong = bytes.iter().enumerate().position(|(index, byte)| *byte != byte_at(index as u64));
+    assert_eq!(first_wrong, None, "the file should be correct throughout");
+    assert_eq!(core.rows().len(), 1, "the same download, not a new one");
     core.shutdown();
 }

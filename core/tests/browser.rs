@@ -56,6 +56,7 @@ impl CoreListener for Recorder {
         self.handed.lock().unwrap().push((downloads, source));
     }
     fn login_needed(&self, _id: String, _url: String) {}
+    fn new_address(&self, _id: String, _download: NewDownload) {}
 }
 
 /// Serves a small file, or a one-segment playlist for any .m3u8 path, and

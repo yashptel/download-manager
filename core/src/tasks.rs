@@ -61,6 +61,9 @@ pub struct Task {
     /// download cannot move, so it moves there when it completes.
     pub move_dir: Option<String>,
     pub move_name: Option<String>,
+    /// The page the download came from (the browser's referer), for
+    /// getting a new address when this one expires.
+    pub page: Option<String>,
     /// Restarted once with the browser's fresh cookies after a 401 or 403
     /// since the user last started it; not saved.
     pub cookies_refreshed: bool,
@@ -91,6 +94,7 @@ impl Task {
             media: false,
             move_dir: None,
             move_name: None,
+            page: None,
             cookies_refreshed: false,
         }
     }
@@ -708,6 +712,7 @@ fn prepare(
     let mut task = Task::new(id, download.url.trim().to_string(), String::new(), added_at);
     task.row.name = download.planned_name();
     (task.row.category, task.row.dir) = download.place(settings, &task.row.name);
+    task.page = download.referer.clone().filter(|page| page.starts_with("http"));
     if start_paused {
         task.row.status = TaskStatus::Paused;
     }
@@ -1163,6 +1168,85 @@ async fn retry_with_fresh_cookies(shared: &Shared, task: &Task) -> bool {
         finish_action(shared, &rpc, std::slice::from_ref(task)).await;
     }
     restarted
+}
+
+/// Starts waiting for a new address for download `id`: the next download a
+/// browser hands over goes to the app as that address (`new_address`).
+/// Returns the page the download came from, to open in the browser.
+pub fn wait_for_address(shared: &Shared, id: &str) -> Result<Option<String>, String> {
+    let page = {
+        let table = shared.tasks.lock().unwrap();
+        let task = table.tasks.get(id).ok_or("The download is gone")?;
+        if task.media {
+            return Err("A stream gets a new address from its page's video menu".into());
+        }
+        if task.row.status == TaskStatus::Complete {
+            return Err("The download is already complete".into());
+        }
+        task.page.clone()
+    };
+    *shared.waiting_address.lock().unwrap() = Some(id.to_string());
+    Ok(page)
+}
+
+/// Continues download `id` from `download`'s address, with the cookies and
+/// headers the browser sent for it, from the part already on disk.
+pub async fn refresh_address(shared: &Shared, id: &str, download: &NewDownload) -> Result<(), String> {
+    let rpc = shared.wait_rpc().await?;
+    let settings = shared.settings.lock().unwrap().clone();
+    let Some(task) = select(shared, &[id.to_string()], |task| task.row.status != TaskStatus::Complete).pop() else {
+        return Ok(());
+    };
+    // Out of the poller's sight while it stops and comes back: a removed task
+    // would otherwise leave the list.
+    shared.tasks.lock().unwrap().removing.insert(id.to_string());
+    let result = async {
+        if matches!(task.row.status, TaskStatus::Downloading | TaskStatus::Queued | TaskStatus::Paused) {
+            let _ = rpc.call("aria2.forceRemove", vec![json!(id)]).await;
+            for _ in 0..60 {
+                let status = rpc.call("aria2.tellStatus", vec![json!(id), json!(["status"])]).await;
+                if !matches!(status.as_ref().ok().and_then(|status| status["status"].as_str()), Some("active" | "waiting" | "paused")) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+        let mut options = readd_options(&rpc, &task).await;
+        for key in ["header", "referer", "user-agent"] {
+            options.remove(key);
+        }
+        let mut fresh = serde_json::Map::new();
+        download.request_options(&mut fresh);
+        let custom: Vec<Value> = settings.header_lines().into_iter().map(Value::from).collect();
+        let own: Vec<Value> = fresh.remove("header").map(into_list).unwrap_or_default();
+        if !custom.is_empty() || !own.is_empty() {
+            fresh.insert("header".into(), Value::Array(custom.into_iter().chain(own).collect()));
+        }
+        options.extend(fresh);
+        restart(shared, &rpc, &task, download.url.trim(), options).await
+    }
+    .await;
+    let updated = {
+        let mut table = shared.tasks.lock().unwrap();
+        table.removing.remove(id);
+        table.tasks.get_mut(id).map(|task| {
+            if result.is_ok() {
+                task.row.url = download.url.trim().to_string();
+                task.page = download.referer.clone().filter(|page| page.starts_with("http")).or(task.page.take());
+                task.row.error = None;
+                task.cookies_refreshed = false;
+            }
+            task.clone()
+        })
+    };
+    if let Some(task) = updated {
+        if let Err(error) = shared.db.lock().unwrap().save(std::slice::from_ref(&task)) {
+            shared.listener.error(format!("Could not save download history: {error}"));
+        }
+        shared.listener.rows_changed(vec![task.row.clone()]);
+        finish_action(shared, &rpc, std::slice::from_ref(&task)).await;
+    }
+    result.map(|_| ())
 }
 
 /// Restarts a refused download with a login. The engine sends it as HTTP

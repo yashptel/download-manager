@@ -200,6 +200,10 @@ pub trait CoreListener: Send + Sync {
     /// cookies did not help: it wants a user name and password. The app
     /// tries a saved login or asks, then calls `set_login`.
     fn login_needed(&self, id: String, url: String);
+    /// While the app waits for a new address for download `id`
+    /// (`wait_for_address`), the next download a browser hands over comes
+    /// here instead of `browser_downloads`. The browser has dropped its copy.
+    fn new_address(&self, id: String, download: NewDownload);
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -251,6 +255,8 @@ pub(crate) struct Shared {
     pub visible: AtomicBool,
     /// Connected browser extensions, for pushing capture rules.
     pub browsers: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    /// A download waiting for a new address from the browser.
+    pub waiting_address: Mutex<Option<String>>,
     /// Questions to the browsers waiting for answers, by request ID.
     pub browser_requests: Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<Value>>>,
     pub next_request: AtomicU64,
@@ -333,6 +339,7 @@ impl DownloadCore {
             wake: Notify::new(),
             visible: AtomicBool::new(true),
             browsers: Mutex::new(Vec::new()),
+            waiting_address: Mutex::new(None),
             browser_requests: Mutex::new(HashMap::new()),
             next_request: AtomicU64::new(1),
             probe_slots: Mutex::new(0),
@@ -429,6 +436,23 @@ impl DownloadCore {
             category,
             dir,
         }
+    }
+
+    /// Waits for a new address for an expired download: the next download a
+    /// browser hands over goes to `CoreListener::new_address`. Returns the
+    /// page the download came from, to open in the browser.
+    pub fn wait_for_address(&self, id: String) -> Result<Option<String>, CoreError> {
+        Ok(tasks::wait_for_address(&self.shared, &id)?)
+    }
+
+    pub fn stop_waiting_for_address(&self) {
+        *self.shared.waiting_address.lock().unwrap() = None;
+    }
+
+    /// Continues download `id` from the new address in `download`, with the
+    /// cookies and headers the browser sent, from the part already on disk.
+    pub fn refresh_address(&self, id: String, download: NewDownload) {
+        self.run(move |shared| async move { tasks::refresh_address(&shared, &id, &download).await });
     }
 
     /// Restarts a download the server refused (401) with a user name and
