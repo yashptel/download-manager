@@ -111,6 +111,14 @@ impl Table {
     pub fn stats(&self) -> GlobalStats {
         self.stats
     }
+
+    /// When a new batch of downloads starts. Each pasted link takes the next
+    /// millisecond to keep its order, so a large batch reaches into the future;
+    /// the next batch starts after it and never sorts into its middle.
+    pub fn next_added_at(&self, now: i64) -> i64 {
+        let newest = self.tasks.values().map(|task| task.row.added_at).max();
+        newest.map_or(now, |newest| now.max(newest + 1))
+    }
 }
 
 fn is_unfinished(status: TaskStatus) -> bool {
@@ -459,7 +467,7 @@ pub async fn add_urls(
 ) -> Result<(), String> {
     let rpc = shared.wait_rpc().await?;
     let settings = shared.settings.lock().unwrap().clone();
-    let now = now_ms();
+    let start = shared.tasks.lock().unwrap().next_added_at(now_ms());
     let mut new_tasks = Vec::new();
     let mut calls = Vec::new();
     for (index, url) in urls
@@ -474,7 +482,7 @@ pub async fn add_urls(
             id.clone(),
             url.to_string(),
             String::new(),
-            now + index as i64,
+            start + index as i64,
         );
         task.row.category = settings.classify(&task.row.name);
         task.row.dir = settings
@@ -894,6 +902,17 @@ mod tests {
             download_dir: "/dl".into(),
             ..Settings::default()
         }
+    }
+
+    #[test]
+    fn a_new_batch_starts_after_the_previous_one() {
+        let mut table = Table::default();
+        assert_eq!(table.next_added_at(1_000), 1_000);
+        // A pasted batch of 5,000 links took 1,000 .. 5,999.
+        let last = Task::new("b".into(), String::new(), String::new(), 5_999);
+        table.tasks.insert("b".into(), last);
+        assert_eq!(table.next_added_at(3_000), 6_000);
+        assert_eq!(table.next_added_at(9_000), 9_000);
     }
 
     #[test]
