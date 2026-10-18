@@ -224,9 +224,20 @@ mod platform {
 
     pub fn start_app() -> std::io::Result<()> {
         let app = super::app_path()?;
+        // The app must not hold the browser's pipes, or the browser would
+        // not see the host's end close when it exits. CreateProcess hands a
+        // child every inheritable handle, so the host's own standard handles
+        // stop being inheritable first.
+        for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            // SAFETY: plain Win32 calls on this process's standard handles.
+            unsafe { SetHandleInformation(GetStdHandle(which), HANDLE_FLAG_INHERIT, 0) };
+        }
         let start = |flags: u32| {
             std::process::Command::new(&app)
                 .arg("--background")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
                 .creation_flags(flags)
                 .spawn()
                 .map(drop)
@@ -235,6 +246,16 @@ mod platform {
         // browser does not close OpenDM.
         start(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB)
             .or_else(|_| start(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP))
+    }
+
+    const STD_INPUT_HANDLE: u32 = -10i32 as u32;
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    const HANDLE_FLAG_INHERIT: u32 = 1;
+
+    unsafe extern "system" {
+        fn GetStdHandle(which: u32) -> *mut std::ffi::c_void;
+        fn SetHandleInformation(handle: *mut std::ffi::c_void, mask: u32, flags: u32) -> i32;
     }
 }
 
