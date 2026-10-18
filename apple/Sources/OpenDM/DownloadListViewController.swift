@@ -9,6 +9,8 @@ enum ListFilter: Hashable {
 
 private enum Column: String, CaseIterable {
     case name, size, progress, speed, eta, status, added
+    /// The single column of the Cards and List styles.
+    case main
 
     var title: String {
         switch self {
@@ -19,15 +21,17 @@ private enum Column: String, CaseIterable {
         case .eta: "Time Left"
         case .status: "Status"
         case .added: "Added"
+        case .main: ""
         }
     }
 
     var width: CGFloat {
         switch self {
         case .name: 260
-        case .progress: 120
-        case .status: 110
+        case .progress: 110
+        case .status: 130
         case .added: 110
+        case .main: 600
         default: 76
         }
     }
@@ -53,9 +57,13 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     private let store: DownloadStore
     private let core: DownloadCore
     private let tableView = DownloadTableView()
-    private let emptyLabel = NSTextField(labelWithString: "")
+    private let emptyView = NSStackView()
+    private let emptyTitle = NSTextField(labelWithString: "")
+    private let emptySubtitle = NSTextField(labelWithString: "")
+    private var headerView: NSTableHeaderView?
     private var ids: [String] = []
     private var positionByID: [String: Int] = [:]
+    private var hoveredID: String?
 
     var filter: ListFilter = .all {
         didSet { if filter != oldValue { rebuild() } }
@@ -63,6 +71,14 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 
     var searchText = "" {
         didSet { if searchText != oldValue { rebuild() } }
+    }
+
+    var style: ListStyle = .saved {
+        didSet {
+            guard style != oldValue else { return }
+            ListStyle.saved = style
+            applyStyle()
+        }
     }
 
     init(store: DownloadStore, core: DownloadCore) {
@@ -80,18 +96,14 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
             tableColumn.width = column.width
             tableColumn.minWidth = column == .name ? 120 : 40
             tableColumn.headerCell.alignment = column.alignment
-            tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: column == .name)
-            // Shown from the header menu; the default set fits the default window.
-            tableColumn.isHidden = column == .added
+            if column != .main {
+                tableColumn.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: column == .name)
+            }
             tableView.addTableColumn(tableColumn)
         }
         tableView.style = .inset
-        tableView.rowHeight = 24
-        tableView.usesAlternatingRowBackgroundColors = true
         tableView.allowsMultipleSelection = true
-        tableView.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
         tableView.autosaveName = "DownloadList"
-        tableView.autosaveTableColumns = true
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
@@ -99,19 +111,31 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         tableView.menu = NSMenu()
         tableView.menu?.delegate = self
         tableView.headerView?.menu = columnMenu()
+        headerView = tableView.headerView
         tableView.registerForDraggedTypes([.URL, .string])
         tableView.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+        tableView.onHover = { [weak self] row in self?.hover(row) }
 
         let scrollView = NSScrollView()
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
 
-        emptyLabel.textColor = .secondaryLabelColor
-        emptyLabel.alignment = .center
+        let emptySymbol = NSImageView(image: NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)!
+            .withSymbolConfiguration(.init(pointSize: 44, weight: .ultraLight))!)
+        emptySymbol.contentTintColor = .tertiaryLabelColor
+        emptyTitle.font = .systemFont(ofSize: 17, weight: .semibold)
+        emptyTitle.textColor = .secondaryLabelColor
+        emptySubtitle.textColor = .tertiaryLabelColor
+        for view in [emptySymbol, emptyTitle, emptySubtitle] {
+            emptyView.addArrangedSubview(view)
+        }
+        emptyView.orientation = .vertical
+        emptyView.spacing = 6
+        emptyView.setCustomSpacing(12, after: emptySymbol)
 
         let container = NSView()
-        for view in [scrollView, emptyLabel] as [NSView] {
+        for view in [scrollView, emptyView] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(view)
         }
@@ -120,10 +144,53 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
             scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            emptyLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            emptyLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            // The safe area excludes the sidebar the list extends under.
+            emptyView.centerXAnchor.constraint(equalTo: container.safeAreaLayoutGuide.centerXAnchor),
+            emptyView.centerYAnchor.constraint(equalTo: container.safeAreaLayoutGuide.centerYAnchor, constant: -20),
         ])
         view = container
+        applyStyle()
+    }
+
+    /// Switches between the Cards, List and Columns designs in place.
+    private func applyStyle() {
+        tableView.columnAutoresizingStyle = .noColumnAutoresizing
+        for tableColumn in tableView.tableColumns {
+            let column = Column(rawValue: tableColumn.identifier.rawValue)
+            tableColumn.isHidden = style == .columns ? (column == .main || column == .added) : column != .main
+            if style == .columns, let column { tableColumn.width = column.width }
+        }
+        tableView.headerView = style == .columns ? headerView : nil
+        tableView.rowHeight = style.rowHeight
+        // The inset style's default 17 pt gap is too wide between six columns.
+        tableView.intercellSpacing = NSSize(width: style == .columns ? 10 : 17, height: 0)
+        tableView.backgroundColor = style == .cards ? .windowBackgroundColor : .controlBackgroundColor
+        tableView.reloadData()
+        fitColumns()
+        rebuild()
+    }
+
+    /// Columns: Name takes whatever the fixed columns leave. Cards and List:
+    /// the one column fills the table. Runs again on every layout pass, so
+    /// window resizes also go to the first visible column.
+    private func fitColumns() {
+        guard let scrollView = tableView.enclosingScrollView else { return }
+        // Content insets cover the sidebar when the list extends under it.
+        let insets = scrollView.contentInsets
+        let clipWidth = scrollView.frame.width - insets.left - insets.right
+        guard clipWidth > 0 else { return }
+        let visible = tableView.tableColumns.filter { !$0.isHidden }
+        guard let flexible = visible.first else { return }
+        let spacing = tableView.intercellSpacing.width * CGFloat(visible.count)
+        let inset: CGFloat = tableView.style == .inset ? 20 : 0
+        let fixed = visible.dropFirst().reduce(0) { $0 + $1.width }
+        let width = max(flexible.minWidth, clipWidth - fixed - spacing - inset)
+        if abs(flexible.width - width) > 0.5 { flexible.width = width }
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        fitColumns()
     }
 
     override func viewDidLoad() {
@@ -200,10 +267,14 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         refresh(Array(visible.location..<NSMaxRange(visible)), allColumns: true)
         tableView.selectRowIndexes(IndexSet(selected.compactMap { positionByID[$0] }), byExtendingSelection: false)
 
-        emptyLabel.stringValue = store.rows.isEmpty
-            ? "Drop a link here or press ⌘N to add a download."
-            : "No downloads here."
-        emptyLabel.isHidden = !ids.isEmpty
+        if store.rows.isEmpty {
+            emptyTitle.stringValue = "No Downloads"
+            emptySubtitle.stringValue = "Press ⌘N or drop a link here to start one."
+        } else {
+            emptyTitle.stringValue = searchText.isEmpty ? "Nothing Here" : "No Results"
+            emptySubtitle.stringValue = searchText.isEmpty ? "No downloads match this view." : "No downloads match “\(searchText)”."
+        }
+        emptyView.isHidden = !ids.isEmpty
     }
 
     private func matches(_ task: TaskRow) -> Bool {
@@ -240,7 +311,18 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         case .eta: return order(lhs.etaSecs ?? .max, rhs.etaSecs ?? .max)
         case .status: return order(Format.status(lhs), Format.status(rhs))
         case .added: return order(lhs.addedAt, rhs.addedAt)
+        case .main: return .orderedSame
         }
+    }
+
+    /// The current sort as (column key, ascending); nil means date added.
+    var sort: (key: String, ascending: Bool)? {
+        tableView.sortDescriptors.first.flatMap { descriptor in descriptor.key.map { ($0, descriptor.ascending) } }
+    }
+
+    /// Sorting for the Cards and List styles, which have no column headers.
+    func setSort(key: String, ascending: Bool) {
+        tableView.sortDescriptors = [NSSortDescriptor(key: key, ascending: ascending)]
     }
 
     // MARK: Table
@@ -253,10 +335,18 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         guard let tableColumn, let column = Column(rawValue: tableColumn.identifier.rawValue),
               let task = store.row(ids[row])
         else { return nil }
-        let view: NSView = tableView.makeView(withIdentifier: column.identifier, owner: self) ?? {
+        let reuseIdentifier: NSUserInterfaceItemIdentifier = switch (column, style) {
+        case (.main, .cards): CardCellView.reuseIdentifier
+        case (.main, _): ListCellView.reuseIdentifier
+        default: column.identifier
+        }
+        let view: NSView = tableView.makeView(withIdentifier: reuseIdentifier, owner: self) ?? {
             switch column {
             case .name: NameCellView(identifier: column.identifier)
             case .progress: ProgressCellView(identifier: column.identifier)
+            case .status: StatusCellView(identifier: column.identifier)
+            case .main where style == .cards: CardCellView()
+            case .main: ListCellView()
             default: TextCellView(identifier: column.identifier, alignment: column.alignment)
             }
         }()
@@ -264,7 +354,32 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         return view
     }
 
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        style == .cards ? CardRowView() : nil
+    }
+
     private func configure(_ view: NSView, _ column: Column, _ task: TaskRow) {
+        switch view {
+        case let cell as ProgressCellView:
+            cell.show(task)
+            return
+        case let cell as StatusCellView:
+            cell.show(task)
+            return
+        case let cell as CardCellView:
+            cell.show(task)
+            let id = task.id
+            cell.onAction = { [weak self] action in self?.perform(action, id: id) }
+            return
+        case let cell as ListCellView:
+            cell.show(task)
+            cell.isHovered = task.id == hoveredID
+            let id = task.id
+            cell.onAction = { [weak self] action in self?.perform(action, id: id) }
+            return
+        default:
+            break
+        }
         if column == .progress {
             (view as? ProgressCellView)?.show(task)
             return
@@ -279,12 +394,41 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         case .speed: field.setIfChanged(Format.speed(task.speed))
         case .eta: field.setIfChanged(Format.eta(task.etaSecs))
         case .added: field.setIfChanged(Format.date(task.addedAt))
-        case .status:
-            field.setIfChanged(Format.status(task))
-            field.textColor = task.status == .failed ? .systemRed : .secondaryLabelColor
-            cell.toolTip = task.error
-        case .progress: break
+        case .status, .progress, .main: break
         }
+    }
+
+    /// Buttons inside a row act on that row only.
+    private func perform(_ action: RowAction, id: String) {
+        guard let row = store.row(id) else { return }
+        switch action {
+        case .primary:
+            switch row.status {
+            case .complete: open([row])
+            case .downloading, .queued: pause([row])
+            case .paused, .failed: resume([row])
+            }
+        case .reveal: reveal([row])
+        case .copyAddress: copyAddresses([row])
+        case .remove: remove([row], deletingFiles: false)
+        }
+    }
+
+    /// The List style shows a row's reveal button while the pointer is over it.
+    private func hover(_ row: Int?) {
+        let id = row.flatMap { $0 < ids.count ? ids[$0] : nil }
+        guard id != hoveredID else { return }
+        let previous = hoveredID.flatMap { positionByID[$0] }
+        hoveredID = id
+        guard style == .list else { return }
+        for position in [previous, row].compactMap({ $0 }) {
+            (tableView.view(atColumn: mainColumnIndex, row: position, makeIfNecessary: false) as? ListCellView)?
+                .isHovered = ids[position] == hoveredID
+        }
+    }
+
+    private var mainColumnIndex: Int {
+        tableView.column(withIdentifier: Column.main.identifier)
     }
 
     func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
@@ -436,7 +580,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     /// Right-click on the header shows or hides columns.
     private func columnMenu() -> NSMenu {
         let menu = NSMenu()
-        for column in Column.allCases where column != .name {
+        for column in Column.allCases where column != .name && column != .main {
             let item = menu.addItem(withTitle: column.title, action: #selector(toggleColumn(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = column.rawValue
@@ -463,9 +607,32 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 /// Forwards key presses the list handles itself (Delete, Space, Return).
 final class DownloadTableView: NSTableView {
     var onKey: ((NSEvent) -> Bool)?
+    /// The row under the pointer, or nil.
+    var onHover: ((Int?) -> Void)?
+    private var tracking: NSTrackingArea?
 
     override func keyDown(with event: NSEvent) {
         if onKey?(event) == true { return }
         super.keyDown(with: event)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let row = row(at: convert(event.locationInWindow, from: nil))
+        onHover?(row >= 0 ? row : nil)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHover?(nil)
     }
 }
