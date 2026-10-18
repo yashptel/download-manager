@@ -82,14 +82,16 @@ input[role="switch"]::after {
 input[role="switch"]:checked { background: var(--green); }
 input[role="switch"]:checked::after { transform: translateX(14px); }
 
-ul { list-style: none; margin: 0; padding: 0; }
-li { display: flex; align-items: center; gap: 10px; padding: 7px 2px; border-top: 1px solid var(--separator); }
+/* One grid for the whole list, so every row's chip, details and button sit in
+   the same columns whatever the label's length. */
+ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; column-gap: 10px; }
+li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding: 7px 2px; border-top: 1px solid var(--separator); }
 li:first-child { border-top: 0; }
-li.group { padding: 10px 2px 3px; border-top: 0; font-size: 11px; font-weight: 600; color: var(--secondary); }
+li.group { display: block; padding: 10px 2px 3px; border-top: 0; font-size: 11px; font-weight: 600; color: var(--secondary); }
 li.group + li { border-top: 0; }
-.kind { flex: none; min-width: 52px; padding: 2px 6px; border-radius: 5px; font-size: 11px; font-weight: 600; text-align: center; color: var(--accent); background: rgba(10, 132, 255, 0.12); }
-.name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--secondary); font-size: 12px; }
-li button { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; }
+.kind { justify-self: stretch; padding: 2px 6px; border-radius: 5px; font-size: 11px; font-weight: 600; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--accent); background: rgba(10, 132, 255, 0.12); }
+.name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+li button { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; }
 li button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 .empty { margin: 4px 2px 0; color: var(--secondary); font-size: 12px; }

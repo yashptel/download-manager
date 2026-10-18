@@ -82,6 +82,10 @@ final class CardCellView: NSTableCellView {
         stack.spacing = 14
         stack.edgeInsets = NSEdgeInsets(top: 5, left: 12, bottom: 5, right: 12)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        // Equal slots, so the pill is the same width whatever the first symbol is.
+        for button in buttons {
+            button.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        }
         pill.addSubview(stack)
 
         for view in [icon, name, statusIcon, statusText, bar, amountText, pill] as [NSView] {
@@ -115,7 +119,7 @@ final class CardCellView: NSTableCellView {
             statusText.trailingAnchor.constraint(lessThanOrEqualTo: pill.leadingAnchor, constant: -12),
 
             bar.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -(CardRowView.margin + 16)),
+            bar.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
             bar.topAnchor.constraint(equalTo: statusText.bottomAnchor, constant: 9),
             bar.heightAnchor.constraint(equalToConstant: 5),
 
@@ -189,13 +193,11 @@ final class PillView: NSView {
 // MARK: List
 
 /// Safari/Transmission-like row: large file icon, name, thin bar while
-/// unfinished, one detail line; circular buttons on the right.
+/// unfinished, one detail line; circular buttons on the right, in fixed slots
+/// so they line up from row to row.
 final class ListCellView: NSTableCellView {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("list")
     var onAction: ((RowAction) -> Void)?
-    var isHovered = false {
-        didSet { if isHovered != oldValue { updateButtons() } }
-    }
 
     private let icon = NSImageView()
     private let name = NSTextField(labelWithString: "")
@@ -279,8 +281,8 @@ final class ListCellView: NSTableCellView {
             primaryButton.setAccessibilityLabel(label)
         }
         primarySymbol = symbol
+        primaryButton.isHidden = task.status == .complete
         updateColors()
-        updateButtons()
     }
 
     override var backgroundStyle: NSView.BackgroundStyle {
@@ -296,11 +298,6 @@ final class ListCellView: NSTableCellView {
         for button in [primaryButton, revealButton] {
             button.contentTintColor = emphasized ? .alternateSelectedControlTextColor : .tertiaryLabelColor
         }
-    }
-
-    private func updateButtons() {
-        primaryButton.isHidden = status == .complete
-        revealButton.isHidden = !(isHovered || status == .complete)
     }
 
     @objc private func primaryPressed() { onAction?(.primary) }

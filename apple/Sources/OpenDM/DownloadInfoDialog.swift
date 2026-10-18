@@ -405,10 +405,11 @@ struct BatchDownloadView: View {
                 Button("Select None") { model.setAll(false) }
             }
             List($model.items) { $item in
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Toggle(isOn: $item.chosen) { EmptyView() }
                         .labelsHidden()
-                    Image(nsImage: FileIcons.icon(for: item.plan.name, size: 16))
+                    Image(nsImage: FileIcons.icon(for: item.plan.name, size: 28))
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(item.plan.name).lineLimit(1).truncationMode(.middle)
                         Text(item.download.url)
@@ -420,9 +421,12 @@ struct BatchDownloadView: View {
                     Spacer()
                     Text(item.plan.category).foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 2)
                 .help(item.download.url)
             }
-            .listStyle(.bordered(alternatesRowBackgrounds: true))
+            // Plain rows: alternating stripes would not match the taller rows
+            // in the empty space below them.
+            .listStyle(.bordered(alternatesRowBackgrounds: false))
             .frame(height: 300)
             HStack {
                 Text("Save to:")

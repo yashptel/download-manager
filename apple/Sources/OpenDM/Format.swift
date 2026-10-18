@@ -50,7 +50,7 @@ enum Format {
         case .downloading: return "Downloading"
         case .queued: return "Queued"
         case .paused: return "Paused"
-        case .complete: return "Complete"
+        case .complete: return "Completed"
         case .failed: return task.error ?? "Failed"
         }
     }

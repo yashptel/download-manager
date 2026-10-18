@@ -195,16 +195,18 @@ struct DownloadProgressView: View {
     @ViewBuilder
     private func running(_ row: TaskRow) -> some View {
         if row.progress >= 0 {
-            ProgressView(value: min(row.progress, 1))
+            StatusBar(value: min(row.progress, 1), color: Color(nsColor: StatusLook.of(row).color))
         } else {
             ProgressView().progressViewStyle(.linear)
         }
+        let downloading = row.status == .downloading
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 6) {
             fact("Status", row.status == .failed ? (row.error ?? "Failed") : Format.status(row))
             fact("Downloaded", [Format.amount(row), Format.percent(row)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-            fact("Speed", row.status == .downloading ? Format.speed(row.speed) : "")
-            fact("Time left", row.status == .downloading ? Format.eta(row.etaSecs) : "")
-            fact("Connections", row.connections > 0 ? "\(row.connections)" : "")
+            // These rows stay while paused so the window keeps its height.
+            fact("Speed", downloading ? Format.speed(row.speed) : "", always: true)
+            fact("Time left", downloading ? Format.eta(row.etaSecs) : "", always: true)
+            fact("Connections", downloading && row.connections > 0 ? "\(row.connections)" : "", always: true)
         }
         .font(.callout)
         DisclosureGroup("Details", isExpanded: $model.detailsShown) {
@@ -264,13 +266,39 @@ struct DownloadProgressView: View {
     }
 
     @ViewBuilder
-    private func fact(_ label: String, _ value: String) -> some View {
-        if !value.isEmpty {
+    private func fact(_ label: String, _ value: String, always: Bool = false) -> some View {
+        if !value.isEmpty || always {
             GridRow {
                 Text(label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
-                Text(value).monospacedDigit().lineLimit(2)
+                Text(value.isEmpty ? "—" : value)
+                    .monospacedDigit()
+                    .lineLimit(2)
+                    .foregroundStyle(value.isEmpty ? .secondary : .primary)
             }
         }
+    }
+}
+
+/// A determinate bar in the status color. Drawn by hand because the system
+/// bar turns grey in a panel that never becomes key, as this one never does.
+struct StatusBar: View {
+    let value: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.secondary.opacity(0.2))
+                if value > 0 {
+                    Capsule()
+                        .fill(color)
+                        .frame(width: max(geometry.size.height, geometry.size.width * value))
+                }
+            }
+        }
+        .frame(height: 6)
+        .accessibilityElement()
+        .accessibilityValue(Text("\(Int(value * 100)) percent"))
     }
 }
 

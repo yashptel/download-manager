@@ -63,7 +63,6 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     private var headerView: NSTableHeaderView?
     private var ids: [String] = []
     private var positionByID: [String: Int] = [:]
-    private var hoveredID: String?
 
     var filter: ListFilter = .all {
         didSet { if filter != oldValue { rebuild() } }
@@ -114,7 +113,6 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         headerView = tableView.headerView
         tableView.registerForDraggedTypes([.URL, .string])
         tableView.onKey = { [weak self] event in self?.handleKey(event) ?? false }
-        tableView.onHover = { [weak self] row in self?.hover(row) }
 
         let scrollView = NSScrollView()
         scrollView.documentView = tableView
@@ -378,7 +376,6 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
             return
         case let cell as ListCellView:
             cell.show(task)
-            cell.isHovered = task.id == hoveredID
             let id = task.id
             cell.onAction = { [weak self] action in self?.perform(action, id: id) }
             return
@@ -417,23 +414,6 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         case .copyAddress: copyAddresses([row])
         case .remove: remove([row], deletingFiles: false)
         }
-    }
-
-    /// The List style shows a row's reveal button while the pointer is over it.
-    private func hover(_ row: Int?) {
-        let id = row.flatMap { $0 < ids.count ? ids[$0] : nil }
-        guard id != hoveredID else { return }
-        let previous = hoveredID.flatMap { positionByID[$0] }
-        hoveredID = id
-        guard style == .list else { return }
-        for position in [previous, row].compactMap({ $0 }) {
-            (tableView.view(atColumn: mainColumnIndex, row: position, makeIfNecessary: false) as? ListCellView)?
-                .isHovered = ids[position] == hoveredID
-        }
-    }
-
-    private var mainColumnIndex: Int {
-        tableView.column(withIdentifier: Column.main.identifier)
     }
 
     func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
@@ -614,32 +594,9 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
 /// Forwards key presses the list handles itself (Delete, Space, Return).
 final class DownloadTableView: NSTableView {
     var onKey: ((NSEvent) -> Bool)?
-    /// The row under the pointer, or nil.
-    var onHover: ((Int?) -> Void)?
-    private var tracking: NSTrackingArea?
 
     override func keyDown(with event: NSEvent) {
         if onKey?(event) == true { return }
         super.keyDown(with: event)
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                                  owner: self, userInfo: nil)
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        super.mouseMoved(with: event)
-        let row = row(at: convert(event.locationInWindow, from: nil))
-        onHover?(row >= 0 ? row : nil)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        onHover?(nil)
     }
 }

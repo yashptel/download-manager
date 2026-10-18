@@ -630,7 +630,7 @@ function addSiteVideo(tabId, video) {
   }
   for (const f of bestAudio) {
     const detail = [f.tbr ? Math.round(f.tbr) + " kbps" : "", codecName(f.acodec, "audio"), formatSize(f.size)].filter(Boolean).join(" · ");
-    add(f, "Audio only", "Audio · " + f.ext.toUpperCase(), detail);
+    add(f, "Audio only", f.ext.toUpperCase(), detail);
   }
 }
 
@@ -747,12 +747,13 @@ function streamGroups(entry, presentation) {
     // The best bitrate of each language.
     if (heard.has(track.language)) return [];
     heard.add(track.language);
-    const language = track.language ? track.language + (track.language === original && audios.some((t) => t.language !== original) ? " (original)" : "") : "";
-    const detail = [track.bandwidth ? kbps(track.bandwidth) : "", codec, estimate(track.bandwidth)].filter(Boolean).join(" · ");
+    // Short labels keep the menu's label column narrow; the group says it is audio.
+    const isOriginal = track.language === original && audios.some((t) => t.language !== original);
+    const detail = [isOriginal ? "Original" : "", track.bandwidth ? kbps(track.bandwidth) : "", codec, estimate(track.bandwidth)].filter(Boolean).join(" · ");
     return [{
-      label: language ? "Audio · " + language : "Audio",
+      label: track.language || "Audio",
       detail,
-      choice: { url: entry.url, video: "none", audio: track.id, format: containerFor(track.codec), quality: "Audio only · " + detail },
+      choice: { url: entry.url, video: "none", audio: track.id, format: containerFor(track.codec), quality: ["Audio only", track.language, detail].filter(Boolean).join(" · ") },
     }];
   });
   return [

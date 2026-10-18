@@ -100,7 +100,7 @@
     .main:active { transform: scale(0.97); }
     svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
     .menu {
-      position: absolute; top: 36px; right: 0; width: 280px; max-height: min(62vh, 440px); overflow-y: auto;
+      position: absolute; top: 36px; right: 0; width: 300px; max-height: min(62vh, 440px); overflow-y: auto;
       padding: 5px; border-radius: 12px; color: #fff; background: rgba(28, 28, 30, 0.88);
       box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.22) inset, 0 12px 34px rgba(0, 0, 0, 0.4);
       -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8);
@@ -108,13 +108,18 @@
     }
     @keyframes open { from { opacity: 0; transform: scale(0.97) translateY(-3px); } }
     .group { padding: 7px 9px 3px; font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.55); }
+    /* One grid for the whole menu, so the details of every option start at
+       the same place whatever the label's length. */
+    .options { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; }
+    .options > .group, .options > .note { grid-column: 1 / -1; }
     .option {
-      display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 6px 9px; border: 0; border-radius: 7px;
+      grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: baseline;
+      padding: 6px 9px; border: 0; border-radius: 7px;
       font: inherit; text-align: left; color: inherit; background: transparent; cursor: pointer;
     }
     .option:hover, .option:focus-visible { background: rgba(10, 132, 255, 0.9); outline: none; }
-    .label { flex: none; min-width: 58px; font-weight: 600; }
-    .detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255, 255, 255, 0.68); font-weight: 400; }
+    .label { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255, 255, 255, 0.68); font-weight: 400; font-variant-numeric: tabular-nums; }
     .option:hover .detail, .option:focus-visible .detail { color: rgba(255, 255, 255, 0.9); }
     .note { padding: 8px 9px; color: rgba(255, 255, 255, 0.75); font-weight: 400; }
     @media (prefers-reduced-motion: reduce) { .main, .menu { transition: none; animation: none; } }
@@ -227,7 +232,7 @@
   }
 
   function openMenu(groups, note) {
-    menu = element("div", "menu");
+    menu = element("div", "menu options");
     menu.setAttribute("role", "menu");
     if (!groups.some((group) => group.options.length)) {
       menu.append(element("div", "note", note || "No video found yet. Play it for a moment, then try again."));
