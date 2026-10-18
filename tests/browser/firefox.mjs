@@ -11,7 +11,7 @@ const ROOT = process.env.OPENDM_E2E_DIR ?? "/tmp/opendm-e2e", RUN = ROOT + "/ff-
 const DATA = RUN + "/data", APP_DL = RUN + "/dl", BROWSER_DL = RUN + "/browser-dl", PROFILE = RUN + "/profile";
 const PORT = 6125;
 for (const dir of [DATA, APP_DL, BROWSER_DL, PROFILE]) fs.mkdirSync(dir, { recursive: true });
-fs.writeFileSync(DATA + "/settings.json", JSON.stringify({ download_dir: APP_DL }));
+fs.writeFileSync(DATA + "/settings.json", JSON.stringify({ download_dir: APP_DL, confirm_downloads: false }));
 fs.rmSync(ROOT + "/site/go.json", { force: true });
 const prefs = {
   "devtools.debugger.remote-enabled": true, "devtools.chrome.enabled": true, "devtools.debugger.prompt-connection": false,

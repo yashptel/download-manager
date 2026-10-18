@@ -310,6 +310,8 @@ fn parse_item(item: &Value) -> Option<NewDownload> {
         media_video: track("mediaVideo"),
         media_audio: track("mediaAudio"),
         media_format: text("mediaFormat").filter(|format| format == "mp4" || format == "mkv"),
+        media_quality: text("mediaQuality").filter(|quality| quality.len() <= 200),
+        category: None,
     })
 }
 

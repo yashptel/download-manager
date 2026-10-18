@@ -737,11 +737,9 @@ function streamGroups(entry, presentation) {
       seen.add(label);
       const audioBandwidth = track.type === "video" ? bestAudio?.bandwidth ?? 0 : 0;
       const size = facts?.size ? "≈ " + formatSize(facts.size + (track.type === "video" ? entry.site.audioSize : 0)) : estimate(track.bandwidth + audioBandwidth);
-      return [{
-        label,
-        detail: [presentation.live ? "Live" : "", codec, size].filter(Boolean).join(" · "),
-        choice: { url: entry.url, video: track.id, audio: withAudio, format: containerFor(track.codec + "," + (bestAudio?.codec ?? "")) },
-      }];
+      const detail = [presentation.live ? "Live" : "", codec, size].filter(Boolean).join(" · ");
+      const format = containerFor(track.codec + "," + (bestAudio?.codec ?? ""));
+      return [{ label, detail, choice: { url: entry.url, video: track.id, audio: withAudio, format, quality: label + " · " + detail } }];
     });
   const heard = new Set();
   const audio = [...audios].sort((a, b) => (b.language === original) - (a.language === original)).flatMap((track) => {
@@ -750,10 +748,11 @@ function streamGroups(entry, presentation) {
     if (heard.has(track.language)) return [];
     heard.add(track.language);
     const language = track.language ? track.language + (track.language === original && audios.some((t) => t.language !== original) ? " (original)" : "") : "";
+    const detail = [track.bandwidth ? kbps(track.bandwidth) : "", codec, estimate(track.bandwidth)].filter(Boolean).join(" · ");
     return [{
       label: language ? "Audio · " + language : "Audio",
-      detail: [track.bandwidth ? kbps(track.bandwidth) : "", codec, estimate(track.bandwidth)].filter(Boolean).join(" · "),
-      choice: { url: entry.url, video: "none", audio: track.id, format: containerFor(track.codec) },
+      detail,
+      choice: { url: entry.url, video: "none", audio: track.id, format: containerFor(track.codec), quality: "Audio only · " + detail },
     }];
   });
   return [
@@ -848,7 +847,7 @@ async function downloadChoice(tabId, choice) {
   const tab = await api.tabs.get(tabId).catch(() => null);
   const item = await mediaItem(tab, entry);
   if (isStream(entry)) {
-    Object.assign(item, { mediaVideo: choice.video, mediaAudio: choice.audio, mediaFormat: choice.format });
+    Object.assign(item, { mediaVideo: choice.video, mediaAudio: choice.audio, mediaFormat: choice.format, mediaQuality: choice.quality });
   }
   await handOver("media", [item]);
 }

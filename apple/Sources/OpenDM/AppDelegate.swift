@@ -25,10 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.core = core
         store.load(from: core)
         store.onBrowserDownloads = { [weak self] downloads, _ in
-            // Until the Download File Info dialog exists, start right away
-            // and show the list so the handoff is visible.
-            self?.core?.addDownloads(downloads: downloads, startPaused: false)
-            self?.mainWindow?.show()
+            guard let core = self?.core else { return }
+            NewDownloads.present(downloads, core: core)
         }
         mainWindow = MainWindowController(store: store, core: core)
         statusItem = StatusItemController(store: store)

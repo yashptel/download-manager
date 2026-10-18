@@ -1,7 +1,8 @@
 import AppKit
 import OpenDMCore
 
-/// Asks for one or more links, prefilled with links on the clipboard.
+/// Asks for one or more links, prefilled with links on the clipboard, then
+/// confirms them like any new download.
 @MainActor
 enum AddDownloadPrompt {
     static func run(in window: NSWindow, core: DownloadCore) {
@@ -20,18 +21,13 @@ enum AddDownloadPrompt {
         textView.string = links(in: NSPasteboard.general.string(forType: .string) ?? "").joined(separator: "\n")
         textView.selectAll(nil)
         alert.accessoryView = scrollView
-        alert.addButton(withTitle: "Start")
-        alert.addButton(withTitle: "Download Later")
+        alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Cancel")
         alert.window.initialFirstResponder = textView
         alert.beginSheetModal(for: window) { response in
             let urls = links(in: textView.string)
-            guard !urls.isEmpty else { return }
-            switch response {
-            case .alertFirstButtonReturn: core.addUrls(urls: urls, startPaused: false)
-            case .alertSecondButtonReturn: core.addUrls(urls: urls, startPaused: true)
-            default: break
-            }
+            guard response == .alertFirstButtonReturn, !urls.isEmpty else { return }
+            NewDownloads.present(urls.map { NewDownload(url: $0) }, core: core)
         }
     }
 

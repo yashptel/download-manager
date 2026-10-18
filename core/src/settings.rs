@@ -24,6 +24,11 @@ pub struct Settings {
     pub capture_excluded_sites: Vec<String>,
     /// Smaller files stay in the browser; 0 captures any size.
     pub capture_min_size: u64,
+    /// Ask before each new download (the Download File Info dialog);
+    /// otherwise downloads start at once.
+    pub confirm_downloads: bool,
+    /// Show a progress window for each download while it runs.
+    pub show_progress_window: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
@@ -52,6 +57,8 @@ impl Default for Settings {
             capture_extensions: words(DEFAULT_CAPTURE_EXTENSIONS),
             capture_excluded_sites: Vec::new(),
             capture_min_size: 0,
+            confirm_downloads: true,
+            show_progress_window: true,
         }
     }
 }

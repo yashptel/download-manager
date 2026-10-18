@@ -128,6 +128,26 @@ pub struct NewDownload {
     /// "mp4" or "mkv".
     #[uniffi(default = None)]
     pub media_format: Option<String>,
+    /// The quality chosen in the browser, as the menu showed it
+    /// ("1080p · VP9 · ≈ 327 MB"), for the confirmation dialog.
+    #[uniffi(default = None)]
+    pub media_quality: Option<String>,
+    /// A category chosen by the user instead of the one the name implies.
+    #[uniffi(default = None)]
+    pub category: Option<String>,
+}
+
+/// A download as it will be, before it starts.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FileInfo {
+    pub name: String,
+    pub size: Option<u64>,
+    pub mime: Option<String>,
+    /// Whether the server can continue an interrupted download, when known.
+    pub resumable: Option<bool>,
+    pub category: String,
+    /// The folder it is saved to.
+    pub dir: String,
 }
 
 /// How a browser handed downloads to the app.
@@ -349,6 +369,38 @@ impl DownloadCore {
                 .await
                 .map(|_| ())
         });
+    }
+
+    /// Name, category and folder of a download from what is already known,
+    /// without asking the server. For showing a confirmation dialog at once.
+    pub fn plan_download(&self, download: NewDownload) -> FileInfo {
+        let settings = self.shared.settings.lock().unwrap().clone();
+        let name = download.planned_name();
+        let (category, dir) = download.place(&settings, &name);
+        FileInfo {
+            name,
+            size: download.size,
+            mime: download.mime,
+            resumable: None,
+            category,
+            dir,
+        }
+    }
+
+    /// Like `plan_download`, with the name and size the server gives. Asks
+    /// the server with the browser's cookies and headers, so it can take a
+    /// few seconds: call it off the main thread.
+    pub fn inspect_download(&self, download: NewDownload) -> Result<FileInfo, CoreError> {
+        let shared = self.shared.clone();
+        Ok(self
+            .runtime
+            .block_on(async move { tasks::inspect(&shared, &download).await })?)
+    }
+
+    /// The folder downloads of `category` are saved to.
+    pub fn category_dir(&self, category: String) -> String {
+        let settings = self.shared.settings.lock().unwrap();
+        settings.directory_for(&category).display().to_string()
     }
 
     /// Registers `host_path`, the bundled `opendm-host`, with the installed

@@ -10,7 +10,7 @@ use crate::db::progress;
 use crate::engine::random_hex;
 use crate::rpc::Rpc;
 use crate::settings::{OTHER_CATEGORY, Settings};
-use crate::{GlobalStats, NewDownload, Shared, TaskRow, TaskStatus};
+use crate::{FileInfo, GlobalStats, NewDownload, Shared, TaskRow, TaskStatus};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -485,17 +485,27 @@ impl NewDownload {
 
     /// Per-download engine options beyond the folder and the GID.
     pub fn engine_options(&self, options: &mut serde_json::Map<String, Value>) {
+        self.request_options(options);
         let mut put = |key: &str, value: &Option<String>| {
             if let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
                 options.insert(key.into(), json!(value));
             }
         };
-        put("filename-hint", &self.filename);
-        if self.filename.is_some() {
-            put("filename-hint-source", &self.filename_source);
+        // A name the user typed is used as it is; a stream's still gets the
+        // container's extension from the engine.
+        let (hint, source) = match (self.filename_source.as_deref(), &self.filename) {
+            (Some("user"), Some(name)) if self.media_kind.is_some() => {
+                let format = self.media_format.as_deref().unwrap_or("mp4");
+                let stem = name.strip_suffix(&format!(".{format}")).unwrap_or(name);
+                (Some(stem.to_string()), Some("title".to_string()))
+            }
+            (Some("user"), name) => (name.clone(), Some("browser".to_string())),
+            (_, name) => (name.clone(), self.filename_source.clone()),
+        };
+        put("filename-hint", &hint);
+        if hint.is_some() {
+            put("filename-hint-source", &source);
         }
-        put("referer", &self.referer);
-        put("user-agent", &self.user_agent);
         put("media", &self.media_kind);
         put("media-video", &self.media_video);
         put("media-audio", &self.media_audio);
@@ -507,6 +517,15 @@ impl NewDownload {
                 "keys": [],
             });
             options.insert("media-input".into(), json!(input.to_string()));
+        }
+    }
+
+    /// What makes the server answer as it did for the browser.
+    fn request_options(&self, options: &mut serde_json::Map<String, Value>) {
+        for (key, value) in [("referer", &self.referer), ("user-agent", &self.user_agent)] {
+            if let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+                options.insert(key.into(), json!(value));
+            }
         }
         let mut headers: Vec<String> = self
             .headers
@@ -527,6 +546,75 @@ impl NewDownload {
             options.insert("header".into(), json!(headers));
         }
     }
+
+    /// The name this download most likely gets, before any server answers.
+    pub fn planned_name(&self) -> String {
+        let hint = self.filename.as_deref().map(str::trim).filter(|n| !n.is_empty());
+        match hint {
+            // The engine adds a stream's container to its title.
+            Some(name) if self.media_kind.is_some() && self.filename_source.as_deref() != Some("user") => {
+                format!("{name}.{}", self.media_format.as_deref().unwrap_or("mp4"))
+            }
+            Some(name) => name.to_string(),
+            None => name_from_url(self.url.trim()),
+        }
+    }
+
+    /// Category and folder for this download once it is called `name`.
+    pub fn place(&self, settings: &Settings, name: &str) -> (String, String) {
+        let category = match self.category.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+            Some(category) => category.to_string(),
+            None => match settings.classify(name) {
+                // A name without a known extension, such as a page title:
+                // the URL's type still counts (a playlist is a video).
+                other if other == OTHER_CATEGORY => settings.classify(&name_from_url(self.url.trim())),
+                category => category,
+            },
+        };
+        let dir = match self.dir.as_deref().filter(|dir| !dir.is_empty()) {
+            Some(dir) => dir.to_string(),
+            None => settings.directory_for(&category).display().to_string(),
+        };
+        (category, dir)
+    }
+}
+
+/// What a download will be before it starts: its name and size from the
+/// server (as the browser would see them), its category and folder.
+pub async fn inspect(shared: &Shared, download: &NewDownload) -> Result<FileInfo, String> {
+    let settings = shared.settings.lock().unwrap().clone();
+    let mut info = FileInfo {
+        name: download.planned_name(),
+        size: download.size,
+        mime: download.mime.clone(),
+        resumable: None,
+        category: String::new(),
+        dir: String::new(),
+    };
+    // A stream's size is only known once it is downloaded.
+    if download.media_kind.is_none() {
+        let rpc = shared.wait_rpc().await?;
+        let mut options = serde_json::Map::new();
+        download.request_options(&mut options);
+        let answer = rpc
+            .call("aria2.probe", vec![json!(download.url.trim()), Value::Object(options)])
+            .await?;
+        let status = number(&answer, "status").unwrap_or(0);
+        if status >= 400 {
+            return Err(format!("The server answered {status}"));
+        }
+        let named = matches!(download.filename_source.as_deref(), Some("browser" | "user"));
+        if let Some(name) = answer["filename"].as_str().filter(|name| !name.is_empty() && !named) {
+            info.name = name.to_string();
+        }
+        info.size = number(&answer, "totalLength").filter(|size| *size > 0).or(info.size);
+        if let Some(mime) = answer["contentType"].as_str().filter(|mime| !mime.is_empty()) {
+            info.mime = Some(mime.to_string());
+        }
+        info.resumable = answer["resumable"].as_str().map(|value| value == "true");
+    }
+    (info.category, info.dir) = download.place(&settings, &info.name);
+    Ok(info)
 }
 
 pub async fn add_urls(
@@ -563,27 +651,8 @@ pub async fn add(
             String::new(),
             start + index as i64,
         );
-        if let Some(name) = download
-            .filename
-            .as_deref()
-            .map(str::trim)
-            .filter(|n| !n.is_empty())
-        {
-            task.row.name = name.to_string();
-        }
-        task.row.category = settings.classify(&task.row.name);
-        if task.row.category == OTHER_CATEGORY {
-            // A name without an extension, such as a page title for a
-            // stream: the URL's type still counts (a playlist is a video).
-            task.row.category = settings.classify(&name_from_url(url));
-        }
-        task.row.dir = match download.dir.as_deref().filter(|dir| !dir.is_empty()) {
-            Some(dir) => dir.to_string(),
-            None => settings
-                .directory_for(&task.row.category)
-                .display()
-                .to_string(),
-        };
+        task.row.name = download.planned_name();
+        (task.row.category, task.row.dir) = download.place(&settings, &task.row.name);
         if start_paused {
             task.row.status = TaskStatus::Paused;
         }
@@ -999,6 +1068,48 @@ mod tests {
             download_dir: "/dl".into(),
             ..Settings::default()
         }
+    }
+
+    #[test]
+    fn a_typed_name_and_category_are_kept() {
+        let settings = settings();
+        let typed = NewDownload {
+            filename: Some("notes.txt".into()),
+            filename_source: Some("user".into()),
+            category: Some("Documents".into()),
+            ..NewDownload::url("https://example.com/get?id=1")
+        };
+        assert_eq!(typed.planned_name(), "notes.txt");
+        assert_eq!(typed.place(&settings, "notes.txt"), ("Documents".into(), "/dl/Documents".into()));
+        let mut options = serde_json::Map::new();
+        typed.engine_options(&mut options);
+        assert_eq!(options["filename-hint"], "notes.txt");
+        assert_eq!(options["filename-hint-source"], "browser");
+    }
+
+    #[test]
+    fn a_stream_is_named_after_its_title_and_container() {
+        let settings = settings();
+        let stream = NewDownload {
+            filename: Some("A Talk".into()),
+            filename_source: Some("title".into()),
+            media_kind: Some("hls".into()),
+            media_format: Some("mkv".into()),
+            ..NewDownload::url("https://cdn.example.com/master.m3u8")
+        };
+        assert_eq!(stream.planned_name(), "A Talk.mkv");
+        assert_eq!(stream.place(&settings, "A Talk.mkv").0, "Video");
+        // Renamed by the user: the engine still adds the extension itself.
+        let renamed = NewDownload {
+            filename: Some("Talk 2.mkv".into()),
+            filename_source: Some("user".into()),
+            ..stream
+        };
+        assert_eq!(renamed.planned_name(), "Talk 2.mkv");
+        let mut options = serde_json::Map::new();
+        renamed.engine_options(&mut options);
+        assert_eq!(options["filename-hint"], "Talk 2");
+        assert_eq!(options["filename-hint-source"], "title");
     }
 
     #[test]
