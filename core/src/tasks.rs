@@ -2,8 +2,9 @@
 //!
 //! Each tick asks aria2 only for the active downloads (one round trip).
 //! Tasks named by an engine notification, tasks that left the active list,
-//! and tasks the table has never seen get a full status in a second round
-//! trip. Only rows that actually changed are sent to the UI.
+//! and active tasks whose files the engine has not reported yet get a full
+//! status in a second round trip. Only rows that actually changed are sent
+//! to the UI.
 
 use crate::db::progress;
 use crate::engine::random_hex;
@@ -162,10 +163,17 @@ async fn tick(shared: &Shared, rpc: &Rpc) -> Result<(), String> {
         let mut table = shared.tasks.lock().unwrap();
         let mut need = std::mem::take(&mut table.dirty);
         need.extend(table.active.difference(&active_ids).cloned());
+        // The engine names the file only after the server answers, which can
+        // be after the notification that started the download.
         need.extend(
             active_ids
                 .iter()
-                .filter(|id| !table.tasks.contains_key(*id))
+                .filter(|id| {
+                    table
+                        .tasks
+                        .get(*id)
+                        .is_none_or(|task| task.files.is_empty())
+                })
                 .cloned(),
         );
         table.active = active_ids;
@@ -358,14 +366,14 @@ fn update_from_engine(task: &mut Task, status: &Value, settings: &Settings, now:
         row.connections = connections as u32;
     }
     if let Some(dir) = status["dir"].as_str() {
-        row.dir = dir.to_string();
+        row.dir = native_path(dir);
     }
     if let Some(files) = status["files"].as_array() {
         task.files = files
             .iter()
             .filter_map(|file| file["path"].as_str())
             .filter(|path| !path.is_empty())
-            .map(String::from)
+            .map(native_path)
             .collect();
         if row.url.is_empty()
             && let Some(uri) = files
@@ -811,6 +819,15 @@ fn base_name(path: &str) -> &str {
         .unwrap_or(path)
 }
 
+/// aria2 reports Windows paths with forward slashes.
+fn native_path(path: &str) -> String {
+    if cfg!(windows) {
+        path.replace('/', "\\")
+    } else {
+        path.to_string()
+    }
+}
+
 /// A display name from the last URL path segment, percent-decoded once.
 pub fn name_from_url(url: &str) -> String {
     let without_query = url.split(['?', '#']).next().unwrap_or(url);
@@ -892,7 +909,12 @@ mod tests {
         assert_eq!(row.status, TaskStatus::Downloading);
         assert_eq!(row.name, "tool.zip");
         assert_eq!(row.url, "https://example.com/get?id=7");
-        assert_eq!(row.path.as_deref(), Some("/dl/Compressed/tool.zip"));
+        let expected_path = if cfg!(windows) {
+            "\\dl\\Compressed\\tool.zip"
+        } else {
+            "/dl/Compressed/tool.zip"
+        };
+        assert_eq!(row.path.as_deref(), Some(expected_path));
         assert_eq!(row.category, "Compressed");
         assert_eq!(row.progress, 0.25);
         assert_eq!(row.eta_secs, Some(15));
