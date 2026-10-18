@@ -123,27 +123,45 @@
                                     <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="16" />
                                     <TextBlock Grid.Column="1" Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                                 </Grid>
-                                <TextBlock Grid.Column="1" Text="{x:Bind SizeText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                <!-- x:Phase="1": while scrolling fast, icon and name come first and the
+                                     other columns follow over the next frames. -->
+                                <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind SizeText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                                 <Grid Grid.Column="2" ColumnSpacing="8" VerticalAlignment="Center">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="36" />
                                     </Grid.ColumnDefinitions>
-                                    <ProgressBar Maximum="100" VerticalAlignment="Center"
-                                                 Value="{x:Bind ProgressValue, Mode=OneWay}"
-                                                 IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
-                                                 ShowPaused="{x:Bind IsPaused, Mode=OneWay}"
-                                                 ShowError="{x:Bind IsFailed, Mode=OneWay}" />
-                                    <TextBlock Grid.Column="1" Text="{x:Bind PercentText, Mode=OneWay}" HorizontalAlignment="Right"
+                                    <!-- Drawn like the Fluent ProgressBar. A ProgressBar re-runs its
+                                         template and visual states on every value change, which made
+                                         each progress tick cost about 1 ms per visible row. Scaling
+                                         the indicator needs no layout. -->
+                                    <Grid Height="3" VerticalAlignment="Center" Visibility="{x:Bind IsDeterminate, Mode=OneWay}">
+                                        <Rectangle Height="1" VerticalAlignment="Center" RadiusX="0.5" RadiusY="0.5"
+                                                   Fill="{ThemeResource ControlStrongStrokeColorDefaultBrush}" />
+                                        <Grid>
+                                            <Grid.RenderTransform>
+                                                <ScaleTransform ScaleX="{x:Bind Fraction, Mode=OneWay}" />
+                                            </Grid.RenderTransform>
+                                            <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                       Visibility="{x:Bind IsRunningOrDone, Mode=OneWay}" />
+                                            <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource SystemFillColorCautionBrush}"
+                                                       Visibility="{x:Bind IsPaused, Mode=OneWay}" />
+                                            <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                                       Visibility="{x:Bind IsFailed, Mode=OneWay}" />
+                                        </Grid>
+                                    </Grid>
+                                    <ProgressBar x:Name="Busy" x:Load="{x:Bind IsIndeterminate, Mode=OneWay}" IsIndeterminate="True"
+                                                 VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind PercentText, Mode=OneWay}" HorizontalAlignment="Right"
                                                Style="{StaticResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </Grid>
-                                <TextBlock Grid.Column="3" Text="{x:Bind SpeedText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="4" Text="{x:Bind EtaText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="5" Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
+                                <TextBlock Grid.Column="3" x:Phase="1" Text="{x:Bind SpeedText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="4" x:Phase="1" Text="{x:Bind EtaText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="5" x:Phase="1" Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis" Visibility="{x:Bind IsNotFailed, Mode=OneWay}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBlock Grid.Column="5" Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
+                                <TextBlock Grid.Column="5" x:Phase="1" Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis" Visibility="{x:Bind IsFailed, Mode=OneWay}"
                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                                            ToolTipService.ToolTip="{x:Bind StatusText, Mode=OneWay}" />
