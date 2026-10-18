@@ -57,7 +57,8 @@ impl CoreListener for Recorder {
     }
 }
 
-/// Serves a small file and keeps every request's header lines.
+/// Serves a small file, or a one-segment playlist for any .m3u8 path, and
+/// keeps every request's header lines.
 fn serve(requests: Arc<Mutex<Vec<String>>>) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -72,11 +73,19 @@ fn serve(requests: Arc<Mutex<Vec<String>>>) -> u16 {
                 }
                 head.push_str(&line);
             }
+            let playlist = head.split_whitespace().nth(1).is_some_and(|path| path.ends_with(".m3u8"));
             requests.lock().unwrap().push(head);
-            let body = b"hello from the server";
+            let (body, kind): (&[u8], &str) = if playlist {
+                (
+                    b"#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nseg.ts\n#EXT-X-ENDLIST\n",
+                    "application/vnd.apple.mpegurl",
+                )
+            } else {
+                (b"hello from the server", "application/octet-stream")
+            };
             let _ = stream.write_all(
                 format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: {kind}\r\nConnection: close\r\n\r\n",
                     body.len()
                 )
                 .as_bytes(),
@@ -241,6 +250,40 @@ fn the_extension_hands_a_download_to_the_app() {
         serde_json::json!({ "id": 4, "type": "download", "source": "link", "items": [{ "url": url }] }),
     );
     assert_eq!(picked["result"], "accepted");
+
+    // The quality menu: the engine reads a playlist the page captured, and
+    // the probe never shows up as a download.
+    let master = "#EXTM3U\n\
+        #EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,CODECS=\"avc1.4d401e,mp4a.40.2\"\nlow.m3u8\n\
+        #EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,CODECS=\"avc1.64001f,mp4a.40.2\"\nhigh.m3u8\n";
+    let rows_before = recorder.rows.lock().unwrap().len();
+    let inspected = ask(
+        &mut socket,
+        serde_json::json!({ "id": 5, "type": "inspect", "item": {
+            "url": format!("http://127.0.0.1:{port}/player/master.m3u8"),
+            "mediaKind": "hls",
+            "mediaManifest": master,
+        }}),
+    );
+    assert_eq!(inspected["id"], 5);
+    assert_eq!(inspected["result"], "ready", "{inspected}");
+    let tracks = inspected["presentation"]["tracks"].as_array().unwrap();
+    let mut heights: Vec<u64> = tracks
+        .iter()
+        .map(|track| track["height"].as_u64().unwrap())
+        .collect();
+    heights.sort();
+    assert_eq!(heights, [360, 720]);
+    assert!(tracks.iter().all(|track| track["id"].as_str().unwrap().starts_with("track-")));
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(recorder.rows.lock().unwrap().len(), rows_before);
+
+    // A plain file has no tracks to read.
+    let refused = ask(
+        &mut socket,
+        serde_json::json!({ "id": 6, "type": "inspect", "item": { "url": url } }),
+    );
+    assert_eq!(refused["result"], "failed");
 
     core.shutdown();
 }

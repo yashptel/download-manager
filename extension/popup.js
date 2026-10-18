@@ -11,27 +11,6 @@ const STATUS = {
   idle: () => "Connecting…",
 };
 
-function formatSize(bytes) {
-  if (!bytes) return "";
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1000 && unit < units.length - 1) {
-    value /= 1000;
-    unit++;
-  }
-  return value.toFixed(value < 10 && unit > 0 ? 1 : 0) + " " + units[unit];
-}
-
-function streamName(url) {
-  try {
-    const parts = new URL(url).pathname.split("/").filter(Boolean);
-    return decodeURIComponent(parts.pop() || new URL(url).hostname);
-  } catch {
-    return url;
-  }
-}
-
 function downloadIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
@@ -57,37 +36,54 @@ function render(state) {
   $("capture-note").textContent = state.appCapture
     ? "Alt-click a link to download it in the browser instead."
     : "Turned off in OpenDM's settings.";
+  $("empty").hidden = state.mediaCount > 0;
+  if (state.mediaCount > 0 && !formatsAsked) {
+    formatsAsked = true;
+    loadFormats();
+  }
+}
 
+let formatsAsked = false;
+
+/** The same choices as the video button's menu: qualities, audio, files. */
+async function loadFormats() {
+  $("loading").hidden = false;
+  const answer = await api.runtime.sendMessage({ type: "formats", tabId });
+  $("loading").hidden = true;
+  if (!answer?.ok) return showError(answer?.error);
   const list = $("media");
-  list.replaceChildren(
-    ...state.media.map((entry) => {
-      const item = document.createElement("li");
-      const kind = document.createElement("span");
-      kind.className = "kind";
-      kind.textContent = entry.kind;
-      const name = document.createElement("div");
-      name.className = "name";
-      const title = document.createElement("div");
-      title.textContent = streamName(entry.url);
-      title.title = entry.url;
-      const detail = document.createElement("small");
-      detail.textContent = entry.kind === "HLS" || entry.kind === "DASH" ? "Stream, saved as MP4" : formatSize(entry.size);
-      name.append(title, detail);
-      const button = document.createElement("button");
-      button.title = "Download with OpenDM";
-      button.append(downloadIcon());
-      button.addEventListener("click", async () => {
-        button.disabled = true;
-        const answer = await api.runtime.sendMessage({ type: "download-media", tabId, url: entry.url });
-        showError(answer?.ok ? "" : answer?.error);
-        if (answer?.ok) window.close();
-        button.disabled = false;
-      });
-      item.append(kind, name, button);
-      return item;
-    }),
-  );
-  $("empty").hidden = state.media.length > 0;
+  list.replaceChildren();
+  for (const group of answer.groups) {
+    const heading = document.createElement("li");
+    heading.className = "group";
+    heading.textContent = group.title;
+    list.append(heading);
+    for (const option of group.options) list.append(optionRow(option));
+  }
+  $("empty").hidden = answer.groups.length > 0;
+}
+
+function optionRow(option) {
+  const item = document.createElement("li");
+  const kind = document.createElement("span");
+  kind.className = "kind";
+  kind.textContent = option.label;
+  const name = document.createElement("div");
+  name.className = "name";
+  name.textContent = option.detail;
+  name.title = option.detail;
+  const button = document.createElement("button");
+  button.title = "Download with OpenDM";
+  button.append(downloadIcon());
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    const answer = await api.runtime.sendMessage({ type: "download-choice", tabId, choice: option.choice });
+    showError(answer?.ok ? "" : answer?.error);
+    if (answer?.ok) window.close();
+    button.disabled = false;
+  });
+  item.append(kind, name, button);
+  return item;
 }
 
 async function refresh() {

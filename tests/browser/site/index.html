@@ -6,11 +6,19 @@
 <body>
   <h1>OpenDM Connect test page</h1>
   <p><a id="zip" href="/files/report.zip">Quarterly report (6 MB zip)</a></p>
-  <p><a href="/files/clip.webm">A clip</a> · <a href="/hls2/stream.m3u8">A stream</a></p>
+  <p><a href="/files/clip.webm">A clip</a></p>
   <video id="video" src="/files/clip.webm" width="560" height="315" muted loop controls></video>
   <script>
-    // Players fetch their playlists like this.
-    fetch("/hls2/stream.m3u8");
+    // What a script player does: ask its API for the video, then load the
+    // master playlist and the quality it starts with. Nothing in the page's
+    // HTML names the playlist.
+    fetch("/api/video.json")
+      .then((answer) => answer.json())
+      .then((video) => fetch(video.sources.hls))
+      .then((answer) => answer.text())
+      .then(() => fetch("/hls/720/stream.m3u8"));
+    // Tells the test whether OpenDM's page script wrapped fetch in this browser.
+    fetch("/log?page-script=" + !/\[native code\]/.test(Function.prototype.toString.call(window.fetch)));
     const auto = new URLSearchParams(location.search).get("auto");
     const link = document.getElementById("zip");
     if (auto === "zip") setTimeout(() => link.click(), 800);
@@ -22,4 +30,3 @@
   </script>
 </body>
 </html>
-

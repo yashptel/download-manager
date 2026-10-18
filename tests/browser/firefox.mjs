@@ -93,6 +93,9 @@ try {
   check("the engine sent the cookie", Boolean(engine?.headers.Cookie?.includes("session=abc123")), engine?.headers.Cookie);
   check("the engine sent the referer", Boolean(engine?.headers.Referer?.includes("auto=zip")), engine?.headers.Referer);
   check("Firefox kept no copy", files(BROWSER_DL).length === 0, files(BROWSER_DL).join(", "));
+  const pageScript = fs.readFileSync(ROOT + "/requests.log", "utf8").trim().split("\n").map(JSON.parse)
+    .filter((r) => r.at > started && r.path.startsWith("/log?page-script=")).at(-1);
+  check("the page script runs in the page", pageScript?.path === "/log?page-script=true", pageScript?.path);
 } catch (error) {
   check("test ran to the end", false, error.message);
 } finally {
@@ -100,4 +103,3 @@ try {
   try { execFileSync("/usr/bin/pkill", ["-f", PROFILE]); } catch {}
 }
 process.exit(results.every(Boolean) ? 0 : 1);
-

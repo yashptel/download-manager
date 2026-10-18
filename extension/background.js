@@ -368,11 +368,19 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // ─── Media on the page ───────────────────────────────────────────────────
+//
+// Two sources: the network (any response with a media type or extension)
+// and page.js (playlists the page's scripts fetch, find in JSON or build in
+// memory). Streams get their qualities from the app, which has the engine
+// read the playlist.
 
-const media = new Map(); // tabId → [{ url, kind, size, headers, at }]
+// loaded: the page fetched it, as opposed to only naming it in a script or
+// JSON answer (which can list every video on a site).
+const media = new Map(); // tabId → [{ url, kind, size, headers, at, loaded, content, variant, page, probe }]
 const MAX_MEDIA = 60;
 const FILE_KINDS = new Set(["mp4", "webm", "mkv", "mov", "m4v", "flv", "avi", "mp3", "m4a", "ogg", "opus", "wav", "flac"]);
 const SEGMENTS = new Set(["ts", "m4s", "m4f", "cmfv", "cmfa", "key"]);
+const PROBE_TTL = 120_000;
 
 /** "HLS", "DASH", a file type such as "MP4", or "" when it is not media. */
 function mediaKind(url, contentType) {
@@ -391,11 +399,37 @@ function mediaKind(url, contentType) {
   return "";
 }
 
+const isStream = (entry) => entry.kind === "HLS" || entry.kind === "DASH";
+
 function responseSize(details) {
   const range = header(details.responseHeaders, "content-range");
   const total = /\/(\d+)$/.exec(range);
   if (total) return Number(total[1]);
   return details.statusCode === 200 ? Number(header(details.responseHeaders, "content-length")) || 0 : 0;
+}
+
+/** Adds a find to the tab's list, or fills in what an earlier find lacked. */
+function addMedia(tabId, found) {
+  const list = media.get(tabId) ?? [];
+  const known = list.find((entry) => entry.url === found.url);
+  if (known) {
+    known.size = Math.max(known.size, found.size ?? 0);
+    if (found.loaded && !known.loaded) {
+      known.loaded = true;
+      showCount(tabId);
+    }
+    if (found.content && !known.content) {
+      known.content = found.content;
+      known.variant = found.variant;
+      known.probe = null;
+      showCount(tabId);
+    }
+    return;
+  }
+  list.push({ size: 0, headers: requests.get(found.url)?.headers ?? [], at: Date.now(), ...found });
+  if (list.length > MAX_MEDIA) list.shift();
+  media.set(tabId, list);
+  showCount(tabId);
 }
 
 api.webRequest.onHeadersReceived.addListener(
@@ -406,20 +440,31 @@ api.webRequest.onHeadersReceived.addListener(
     const size = responseSize(details);
     // Short sounds and previews are not worth listing.
     if (kind !== "HLS" && kind !== "DASH" && size > 0 && size < 512 * 1024) return;
-    const list = media.get(details.tabId) ?? [];
-    const known = list.find((entry) => entry.url === details.url);
-    if (known) {
-      known.size = Math.max(known.size, size);
-      return;
-    }
-    list.push({ url: details.url, kind, size, headers: requests.get(details.url)?.headers ?? [], at: Date.now() });
-    if (list.length > MAX_MEDIA) list.shift();
-    media.set(details.tabId, list);
-    showCount(details.tabId);
+    addMedia(details.tabId, { url: details.url, kind, size, loaded: true });
   },
   { urls: ["<all_urls>"] },
   ["responseHeaders"],
 );
+
+/** Finds from page.js, through content.js. */
+function addPageMedia(tabId, frameUrl, items) {
+  for (const item of items.slice(0, 100)) {
+    const url = String(item?.url ?? "");
+    const blob = url.startsWith("blob:");
+    if (!(/^https?:/i.test(url) || blob) || !["hls", "dash"].includes(item.kind)) continue;
+    const content = typeof item.content === "string" && item.content.length <= 2 * 1024 * 1024 ? item.content : undefined;
+    // A playlist in memory can only be downloaded from what the page gave us.
+    if (blob && !content) continue;
+    addMedia(tabId, {
+      url,
+      kind: item.kind.toUpperCase(),
+      content,
+      loaded: Boolean(content),
+      variant: item.variant === true,
+      page: blob ? frameUrl : undefined,
+    });
+  }
+}
 
 function clearMedia(tabId) {
   if (media.delete(tabId)) showCount(tabId);
@@ -431,8 +476,23 @@ api.tabs.onUpdated.addListener((tabId, change) => {
 });
 api.tabs.onRemoved.addListener((tabId) => media.delete(tabId));
 
+/** The finds worth showing: what the page loaded, when it loaded a stream.
+ * A player that loaded a master playlist also loads one of its quality
+ * playlists, which the master already lists, and its segments. */
+function visibleMedia(tabId) {
+  const list = media.get(tabId) ?? [];
+  const hasMaster = list.some((entry) => entry.kind === "HLS" && entry.content && !entry.variant);
+  const streams = list.filter(isStream);
+  const playing = streams.some((entry) => entry.loaded);
+  const folders = streams.map((entry) => entry.url.replace(/[?#].*$/, "").replace(/[^/]*$/, ""));
+  return list.filter((entry) => {
+    if (isStream(entry)) return (!playing || entry.loaded) && !(hasMaster && entry.variant);
+    return !folders.some((folder) => entry.url.startsWith(folder));
+  });
+}
+
 function showCount(tabId) {
-  const count = media.get(tabId)?.length ?? 0;
+  const count = visibleMedia(tabId).length;
   api.action.setBadgeBackgroundColor({ tabId, color: "#0a84ff" }).catch(() => {});
   api.action.setBadgeText({ tabId, text: count ? String(count) : "" }).catch(() => {});
 }
@@ -445,28 +505,201 @@ function titleName(title, kind) {
   return kind === "HLS" || kind === "DASH" ? name : name + "." + kind.toLowerCase();
 }
 
-async function downloadMedia(tabId, entry) {
-  const tab = await api.tabs.get(tabId).catch(() => null);
-  const item = await requestItem(entry.url, { referrer: tab?.url ?? "", headers: entry.headers, storeId: tab?.cookieStoreId });
+/** What the app needs to fetch this find again, as the page did. */
+async function mediaItem(tab, entry) {
+  const url = entry.page ?? entry.url;
+  const item = await requestItem(url, { referrer: tab?.url ?? "", headers: entry.headers, storeId: tab?.cookieStoreId });
   const headers = entry.headers.filter((h) => ["origin", "authorization"].includes(h.name.toLowerCase()) || /^x-/i.test(h.name));
   const filename = titleName(tab?.title, entry.kind);
-  await handOver("media", [{ ...item, headers, filename, filenameSource: filename ? "title" : undefined }]);
+  const stream = isStream(entry)
+    ? { mediaKind: entry.kind.toLowerCase(), mediaManifest: entry.content || undefined }
+    : {};
+  return { ...item, headers, filename, filenameSource: filename ? "title" : undefined, ...stream };
 }
 
-/** A stream manifest beats loose files; among files, the largest. */
-function bestMedia(tabId) {
-  const list = media.get(tabId) ?? [];
-  return list.find((entry) => entry.kind === "HLS" || entry.kind === "DASH") ?? [...list].sort((a, b) => b.size - a.size)[0];
+/** The stream's tracks, read by the app's engine; kept for a while. */
+async function inspect(tab, entry) {
+  if (entry.probe && Date.now() - entry.probe.at < PROBE_TTL) return entry.probe.answer;
+  const answer = await ask({ type: "inspect", item: await mediaItem(tab, entry) }, { timeoutMs: 40_000 });
+  entry.probe = { at: Date.now(), answer };
+  return answer;
 }
 
-async function downloadBestMedia(tabId, src) {
-  if (src && /^https?:/i.test(src)) {
-    const known = media.get(tabId)?.find((entry) => entry.url === src);
-    return downloadMedia(tabId, known ?? { url: src, kind: mediaKind(src, "") || "MP4", size: 0, headers: requests.get(src)?.headers ?? [] });
+// ─── Quality menu ────────────────────────────────────────────────────────
+
+const CODECS = [
+  [/^(avc1|avc3)/, "H.264"],
+  [/^(hvc1|hev1)/, "HEVC"],
+  [/^(vp09|vp9)/, "VP9"],
+  [/^vp8/, "VP8"],
+  [/^av01/, "AV1"],
+  [/^mp4a\.40\.(5|29)/, "HE-AAC"],
+  [/^mp4a/, "AAC"],
+  [/^opus/, "Opus"],
+  [/^ec-3/, "E-AC-3"],
+  [/^ac-3/, "AC-3"],
+  [/^flac/, "FLAC"],
+  [/^vorbis/, "Vorbis"],
+];
+
+function codecName(codecs, wanted) {
+  for (const codec of codecs.split(",").map((c) => c.trim().toLowerCase())) {
+    const name = CODECS.find(([pattern]) => pattern.test(codec))?.[1];
+    const video = ["H.264", "HEVC", "VP9", "VP8", "AV1"].includes(name);
+    if (name && video === (wanted === "video")) return name;
   }
-  const best = bestMedia(tabId);
+  return "";
+}
+
+function formatSize(bytes) {
+  if (!bytes) return "";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit++;
+  }
+  return value.toFixed(value < 10 && unit > 0 ? 1 : 0) + " " + units[unit];
+}
+
+const kbps = (bandwidth) => Math.round(bandwidth / 1000) + " kbps";
+
+/** MP4 plays everywhere; codecs it cannot carry go into MKV. */
+function containerFor(codecs) {
+  return /vp8|vorbis|theora/i.test(codecs) ? "mkv" : "mp4";
+}
+
+function streamName(url) {
+  try {
+    const parts = new URL(url).pathname.split("/").filter(Boolean);
+    return decodeURIComponent(parts.pop() || new URL(url).hostname);
+  } catch {
+    return url;
+  }
+}
+
+/** Menu groups for one stream: every video quality, then audio on its own. */
+function streamGroups(entry, presentation) {
+  const seconds = presentation.live ? 0 : presentation.durationMs / 1000;
+  const estimate = (bandwidth) => (seconds && bandwidth ? "≈ " + formatSize((bandwidth * seconds) / 8) : "");
+  const audios = presentation.tracks.filter((t) => t.type === "audio").sort((a, b) => b.bandwidth - a.bandwidth);
+  const bestAudio = audios[0];
+  const seen = new Set();
+  const video = presentation.tracks
+    .filter((t) => t.type === "video" || t.type === "muxed")
+    .sort((a, b) => b.height - a.height || b.frameRate - a.frameRate || b.bandwidth - a.bandwidth)
+    .flatMap((track) => {
+      const fps = track.frameRate > 31 ? Math.round(track.frameRate) : "";
+      const label = track.height ? track.height + "p" + fps : kbps(track.bandwidth);
+      const codec = codecName(track.codec, "video");
+      if (seen.has(label + codec)) return [];
+      seen.add(label + codec);
+      const audioBandwidth = track.type === "video" ? bestAudio?.bandwidth ?? 0 : 0;
+      return [{
+        label,
+        detail: [presentation.live ? "Live" : "", codec, estimate(track.bandwidth + audioBandwidth)].filter(Boolean).join(" · "),
+        choice: { url: entry.url, video: track.id, audio: "best", format: containerFor(track.codec + "," + (bestAudio?.codec ?? "")) },
+      }];
+    });
+  const heard = new Set();
+  const audio = audios.flatMap((track) => {
+    const codec = codecName(track.codec, "audio");
+    const key = track.language + codec + kbps(track.bandwidth);
+    if (heard.has(key)) return [];
+    heard.add(key);
+    return [{
+      label: track.language ? "Audio · " + track.language : "Audio",
+      detail: [track.bandwidth ? kbps(track.bandwidth) : "", codec, estimate(track.bandwidth)].filter(Boolean).join(" · "),
+      choice: { url: entry.url, video: "none", audio: track.id, format: containerFor(track.codec) },
+    }];
+  });
+  return [
+    { title: "Video", options: video },
+    { title: "Audio only", options: audio },
+  ].filter((group) => group.options.length);
+}
+
+/** Everything the tab's video menu offers. src is the hovered video's own URL. */
+async function formats(tabId, src) {
+  const tab = await api.tabs.get(tabId).catch(() => null);
+  const list = [...visibleMedia(tabId)].reverse(); // Newest first.
+  if (src && /^https?:/i.test(src) && !list.some((entry) => entry.url === src)) {
+    const kind = mediaKind(src, "") || "MP4";
+    addMedia(tabId, { url: src, kind, loaded: true });
+    list.unshift(media.get(tabId).find((entry) => entry.url === src));
+  }
+  const files = list.filter((entry) => !isStream(entry)).sort((a, b) => (b.url === src) - (a.url === src) || b.size - a.size).slice(0, 6);
+
+  const probe = (entries) =>
+    Promise.all(
+      entries.slice(0, 4).map(async (entry) => {
+        try {
+          return { entry, answer: await inspect(tab, entry) };
+        } catch (error) {
+          return { entry, answer: { result: "failed", reason: error.message } };
+        }
+      }),
+    );
+  // The streams the player loaded come first. When none of them can be read
+  // (often DRM on the top qualities only), the page may name others that can.
+  const streams = [...(media.get(tabId) ?? [])].reverse().filter((entry) => isStream(entry) && !entry.variant);
+  let probed = await probe(streams.filter((entry) => entry.loaded));
+  if (!probed.some((p) => p.answer.result === "ready")) {
+    probed = [...probed, ...(await probe(streams.filter((entry) => !entry.loaded)))];
+  }
+  const ready = probed.filter((p) => p.answer.result === "ready");
+  const qualities = (p) => p.answer.presentation.tracks.filter((t) => t.type !== "audio").length;
+  // A playlist of one quality next to a full one is a part of it, or an ad.
+  const most = Math.max(0, ...ready.map(qualities));
+  const shown = ready
+    .filter((p) => most < 2 || qualities(p) >= 2)
+    .sort((a, b) => Boolean(b.entry.loaded) - Boolean(a.entry.loaded) || qualities(b) - qualities(a));
+
+  const groups = [];
+  shown.forEach((p, index) => {
+    const own = streamGroups(p.entry, p.answer.presentation);
+    if (index === 0) groups.push(...own);
+    else groups.push({ title: "Another stream · " + hostOf(p.entry.url), options: own.flatMap((g) => g.options) });
+  });
+  const failed = probed.find((p) => p.answer.result !== "ready");
+  if (!shown.length && failed) {
+    // The engine could not read it here; it may still download.
+    groups.push({
+      title: "Stream",
+      options: [{ label: "Best quality", detail: failed.entry.kind + " · " + (failed.answer.reason || "qualities unknown"), choice: { url: failed.entry.url, video: "best", audio: "best" } }],
+    });
+  }
+  if (files.length) {
+    groups.push({
+      title: "Files",
+      options: files.map((entry) => ({
+        label: entry.kind,
+        detail: [formatSize(entry.size), streamName(entry.url)].filter(Boolean).join(" · "),
+        choice: { url: entry.url },
+      })),
+    });
+  }
+  return { title: tab?.title ?? "", groups };
+}
+
+async function downloadChoice(tabId, choice) {
+  const entry = media.get(tabId)?.find((item) => item.url === choice?.url);
+  if (!entry) throw new Error("That video is gone; reload the page");
+  const tab = await api.tabs.get(tabId).catch(() => null);
+  const item = await mediaItem(tab, entry);
+  if (isStream(entry)) {
+    Object.assign(item, { mediaVideo: choice.video, mediaAudio: choice.audio, mediaFormat: choice.format });
+  }
+  await handOver("media", [item]);
+}
+
+/** The context menu on a video: the best stream at its best quality. */
+async function downloadBestMedia(tabId) {
+  const list = visibleMedia(tabId);
+  const best = list.findLast(isStream) ?? [...list].sort((a, b) => b.size - a.size)[0];
   if (!best) throw new Error("No video found yet. Play it for a moment, then try again.");
-  return downloadMedia(tabId, best);
+  await downloadChoice(tabId, { url: best.url });
 }
 
 // ─── Errors, popup and page messages ─────────────────────────────────────
@@ -484,13 +717,20 @@ async function onMessage(message, sender) {
       bypass.until = Date.now() + 5_000;
       bypass.url = message.url || "";
       return { ok: true };
-    case "video":
-      await downloadBestMedia(sender.tab.id, message.src);
+    case "page-media":
+      if (sender.tab && Array.isArray(message.items)) addPageMedia(sender.tab.id, sender.url ?? sender.tab.url, message.items);
+      return { ok: true };
+    case "formats": {
+      // The popup names the tab; the page's own menu is in sender.tab.
+      const tabId = message.tabId ?? sender.tab?.id;
+      return { ok: true, ...(await formats(tabId, message.src)) };
+    }
+    case "download-choice":
+      await downloadChoice(message.tabId ?? sender.tab?.id, message.choice);
       return { ok: true };
     case "state": {
       await ready;
       if (app.state !== "connected") await openPort(false).catch(() => {});
-      const list = (media.get(message.tabId) ?? []).map(({ url, kind, size }) => ({ url, kind, size }));
       return {
         ok: true,
         state: app.state,
@@ -499,7 +739,7 @@ async function onMessage(message, sender) {
         captureOn: settings.captureOn,
         appCapture: settings.rules.capture,
         lastError,
-        media: list,
+        mediaCount: visibleMedia(message.tabId).length,
         hostAccess: await api.permissions.contains({ origins: ["<all_urls>"] }),
       };
     }
@@ -510,12 +750,6 @@ async function onMessage(message, sender) {
       settings.captureOn = Boolean(message.on);
       await api.storage.local.set({ captureOn: settings.captureOn });
       return { ok: true };
-    case "download-media": {
-      const entry = media.get(message.tabId)?.find((item) => item.url === message.url);
-      if (!entry) throw new Error("That stream is gone; reload the page");
-      await downloadMedia(message.tabId, entry);
-      return { ok: true };
-    }
     default:
       return { ok: false, error: "unknown message" };
   }

@@ -228,6 +228,21 @@ pub async fn sync_all(shared: &Shared, rpc: &Rpc) -> Result<(), String> {
         lists.push(into_list(answer?));
     }
     let statuses: Vec<Value> = lists.concat();
+    // Probes left behind by a crash.
+    let probes: Vec<(&str, Vec<Value>)> = statuses
+        .iter()
+        .filter_map(gid)
+        .filter(|id| crate::media::is_probe(id))
+        .flat_map(|id| {
+            [
+                ("aria2.forceRemove", vec![json!(id)]),
+                ("aria2.removeDownloadResult", vec![json!(id)]),
+            ]
+        })
+        .collect();
+    if !probes.is_empty() {
+        let _ = rpc.multicall(probes).await;
+    }
     let known: HashSet<&str> = statuses.iter().filter_map(gid).collect();
     let missing: Vec<String> = {
         let mut table = shared.tasks.lock().unwrap();
@@ -268,7 +283,7 @@ async fn apply(
         let mut table = shared.tasks.lock().unwrap();
         for status in statuses {
             let Some(id) = gid(status) else { continue };
-            if table.removing.contains(id) {
+            if table.removing.contains(id) || crate::media::is_probe(id) {
                 continue;
             }
             if status["status"] == "removed" {
@@ -469,7 +484,7 @@ impl NewDownload {
     }
 
     /// Per-download engine options beyond the folder and the GID.
-    fn engine_options(&self, options: &mut serde_json::Map<String, Value>) {
+    pub fn engine_options(&self, options: &mut serde_json::Map<String, Value>) {
         let mut put = |key: &str, value: &Option<String>| {
             if let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
                 options.insert(key.into(), json!(value));
@@ -481,6 +496,18 @@ impl NewDownload {
         }
         put("referer", &self.referer);
         put("user-agent", &self.user_agent);
+        put("media", &self.media_kind);
+        put("media-video", &self.media_video);
+        put("media-audio", &self.media_audio);
+        put("media-format", &self.media_format);
+        if let Some(content) = self.media_manifest.as_deref().filter(|c| !c.is_empty()) {
+            let input = json!({
+                "manifests": [{ "url": self.url.trim(), "content": content }],
+                "tracks": [],
+                "keys": [],
+            });
+            options.insert("media-input".into(), json!(input.to_string()));
+        }
         let mut headers: Vec<String> = self
             .headers
             .iter()

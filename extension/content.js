@@ -1,11 +1,12 @@
-// OpenDM Connect page script: Alt-click bypass and the video button.
+// OpenDM Connect page script: Alt-click bypass, the finds from page.js, and
+// the video button with its quality menu.
 "use strict";
 
 (() => {
   if (globalThis.__opendmConnect) return;
   globalThis.__opendmConnect = true;
   const api = globalThis.browser ?? globalThis.chrome;
-  const send = (message) => api.runtime.sendMessage(message).catch(() => ({ ok: false }));
+  const send = (message) => api.runtime.sendMessage(message).catch((error) => ({ ok: false, error: error.message }));
 
   // Alt-click keeps the download in the browser. Reported on mouse-down, so
   // the background knows before the browser creates the download.
@@ -19,11 +20,50 @@
     true,
   );
 
-  // ─── Video button ───────────────────────────────────────────────────────
+  // ─── Streams the page's scripts load (page.js) ──────────────────────────
+
+  let pending = [];
+  function found(item) {
+    pending.push(item);
+    if (pending.length === 1) setTimeout(() => send({ type: "page-media", items: pending.splice(0) }), 200);
+  }
+  document.addEventListener("opendm-media", (event) => {
+    try {
+      const item = JSON.parse(event.detail);
+      if (typeof item?.url === "string") found(item);
+    } catch {}
+  });
+
+  // Playlist URLs written into the page itself: player configs in inline
+  // scripts and the video tags of the social-preview metadata.
+  const URL_IN_TEXT = /https?:\/\/[^\s"'<>\\]+?\.(?:m3u8|mpd)(?:\?[^\s"'<>\\]*)?/gi;
+  function scanDocument() {
+    let text = "";
+    for (const script of document.querySelectorAll("script:not([src])")) {
+      text += script.textContent + "\n";
+      if (text.length > 4 * 1024 * 1024) break;
+    }
+    for (const meta of document.querySelectorAll('meta[property^="og:video"], meta[name^="twitter:player:stream"]')) {
+      text += " " + (meta.content || "");
+    }
+    const plain = text.replace(/\\\//g, "/").replace(/\\u0026/gi, "&");
+    const seen = new Set();
+    for (const [url] of plain.matchAll(URL_IN_TEXT)) {
+      if (seen.size >= 20) break;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      found({ url, kind: /\.mpd/i.test(url) ? "dash" : "hls" });
+    }
+  }
+  if (document.readyState === "loading") addEventListener("DOMContentLoaded", scanDocument, { once: true });
+  else scanDocument();
+
+  // ─── Video button and quality menu ──────────────────────────────────────
 
   const videos = document.getElementsByTagName("video"); // Live, so cheap to re-read.
   let host = null;
   let button = null;
+  let menu = null;
   let current = null;
   let hideTimer = 0;
   let lastMove = 0;
@@ -40,48 +80,80 @@
   }
 
   const STYLE = `
-    button {
-      display: flex; align-items: center; gap: 6px;
+    .row {
+      position: relative; display: flex;
+      font: 500 12.5px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .main {
+      display: flex; align-items: center; gap: 6px; margin-left: auto;
       height: 30px; padding: 0 12px 0 10px; border: 0; border-radius: 15px;
-      font: 500 12.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-      color: #fff; background: rgba(28, 28, 30, 0.62);
+      font: inherit; color: #fff; background: rgba(28, 28, 30, 0.62);
       box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.28) inset, 0 4px 14px rgba(0, 0, 0, 0.28);
       -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6);
       cursor: pointer; opacity: 0; transform: translateY(-4px);
       transition: opacity 0.16s ease-out, transform 0.16s ease-out, background 0.12s;
     }
-    button.shown { opacity: 1; transform: none; }
-    button:hover { background: rgba(10, 132, 255, 0.85); }
-    button:active { transform: scale(0.97); }
+    .main.shown { opacity: 1; transform: none; }
+    .main:hover, .main.open { background: rgba(10, 132, 255, 0.85); }
+    .main:active { transform: scale(0.97); }
     svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-    @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+    .menu {
+      position: absolute; top: 36px; right: 0; width: 280px; max-height: min(62vh, 440px); overflow-y: auto;
+      padding: 5px; border-radius: 12px; color: #fff; background: rgba(28, 28, 30, 0.88);
+      box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.22) inset, 0 12px 34px rgba(0, 0, 0, 0.4);
+      -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8);
+      transform-origin: top right; animation: open 0.14s ease-out;
+    }
+    @keyframes open { from { opacity: 0; transform: scale(0.97) translateY(-3px); } }
+    .group { padding: 7px 9px 3px; font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.55); }
+    .option {
+      display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 6px 9px; border: 0; border-radius: 7px;
+      font: inherit; text-align: left; color: inherit; background: transparent; cursor: pointer;
+    }
+    .option:hover, .option:focus-visible { background: rgba(10, 132, 255, 0.9); outline: none; }
+    .label { flex: none; min-width: 58px; font-weight: 600; }
+    .detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255, 255, 255, 0.68); font-weight: 400; }
+    .option:hover .detail, .option:focus-visible .detail { color: rgba(255, 255, 255, 0.9); }
+    .note { padding: 8px 9px; color: rgba(255, 255, 255, 0.75); font-weight: 400; }
+    @media (prefers-reduced-motion: reduce) { .main, .menu { transition: none; animation: none; } }
   `;
+
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
 
   function build() {
     host = document.createElement("opendm-connect");
     host.style.cssText = "all: initial; position: fixed; z-index: 2147483647; display: none;";
     const shadow = host.attachShadow({ mode: "closed" });
     // Built with DOM calls: pages with Trusted Types reject innerHTML.
-    const style = document.createElement("style");
+    const style = element("style");
     style.textContent = STYLE;
-    button = document.createElement("button");
+    button = element("button", "main");
     button.type = "button";
     button.title = "Download with OpenDM";
+    button.setAttribute("aria-haspopup", "menu");
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 16 16");
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", "M8 2v8M4.5 6.8 8 10.3l3.5-3.5M3 13.5h10");
     svg.append(path);
-    const text = document.createElement("span");
-    text.textContent = "Download video";
-    button.append(svg, text);
-    shadow.append(style, button);
+    button.append(svg, element("span", "", "Download video"));
+    const row = element("div", "row");
+    row.append(button);
+    shadow.append(style, row);
     button.addEventListener("click", onClick);
-    // Keep the page's player from treating the click as its own.
-    for (const type of ["mousedown", "mouseup", "pointerdown", "pointerup", "dblclick"]) {
-      button.addEventListener(type, (event) => event.stopPropagation());
+    // Keep the page's player from treating clicks here as its own.
+    for (const type of ["click", "mousedown", "mouseup", "pointerdown", "pointerup", "dblclick", "wheel", "keydown"]) {
+      row.addEventListener(type, (event) => event.stopPropagation());
     }
-    button.addEventListener("mouseenter", () => clearTimeout(hideTimer));
+    row.addEventListener("keydown", onKey);
+    host.addEventListener("mouseenter", () => clearTimeout(hideTimer));
+    host.addEventListener("mouseleave", () => !menu && !busy && (hideTimer = setTimeout(hide, 1200)));
     (document.body ?? document.documentElement).appendChild(host);
   }
 
@@ -93,6 +165,7 @@
 
   function show(video) {
     if (!host || !host.isConnected) build();
+    if (menu && video !== current) closeMenu();
     current = video;
     place();
     host.style.display = "block";
@@ -102,7 +175,7 @@
   }
 
   function hide() {
-    if (!host || busy) return;
+    if (!host || busy || menu) return;
     button.classList.remove("shown");
     hideTimer = setTimeout(() => (host.style.display = "none"), 160);
   }
@@ -111,20 +184,86 @@
     button.querySelector("span").textContent = text;
   }
 
-  async function onClick(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (busy || !current) return;
+  /** Shows a result on the button for a moment. */
+  function flash(text, ms) {
     busy = true;
-    label("Sending…");
-    const answer = await send({ type: "video", src: current.currentSrc || current.src || "" });
-    label(answer?.ok ? "Sent to OpenDM" : answer?.error || "OpenDM is not available");
-    button.title = answer?.ok ? "Download with OpenDM" : answer?.error || "";
+    label(text);
     setTimeout(() => {
       busy = false;
       label("Download video");
       hide();
-    }, answer?.ok ? 1400 : 3500);
+    }, ms);
+  }
+
+  async function onClick(event) {
+    event.preventDefault();
+    if (menu) return closeMenu();
+    if (busy || !current) return;
+    busy = true;
+    label("Finding qualities…");
+    const answer = await send({ type: "formats", src: current.currentSrc || current.src || "" });
+    busy = false;
+    label("Download video");
+    if (!answer?.ok) return flash(answer?.error || "OpenDM is not available", 3500);
+    openMenu(answer.groups ?? []);
+  }
+
+  function openMenu(groups) {
+    menu = element("div", "menu");
+    menu.setAttribute("role", "menu");
+    if (!groups.some((group) => group.options.length)) {
+      menu.append(element("div", "note", "No video found yet. Play it for a moment, then try again."));
+    }
+    for (const group of groups) {
+      if (group.title) menu.append(element("div", "group", group.title));
+      for (const option of group.options) {
+        const item = element("button", "option");
+        item.type = "button";
+        item.setAttribute("role", "menuitem");
+        item.title = option.detail;
+        item.append(element("span", "label", option.label), element("span", "detail", option.detail));
+        item.addEventListener("click", () => choose(option.choice));
+        menu.append(item);
+      }
+    }
+    button.classList.add("open");
+    button.setAttribute("aria-expanded", "true");
+    button.after(menu);
+    clearTimeout(hideTimer);
+    addEventListener("mousedown", onOutside, true);
+  }
+
+  function closeMenu() {
+    menu?.remove();
+    menu = null;
+    button?.classList.remove("open");
+    button?.setAttribute("aria-expanded", "false");
+    removeEventListener("mousedown", onOutside, true);
+    hideTimer = setTimeout(hide, 1200);
+  }
+
+  function onOutside(event) {
+    if (!event.composedPath().includes(host)) closeMenu();
+  }
+
+  function onKey(event) {
+    if (!menu) return;
+    const items = [...menu.querySelectorAll(".option")];
+    const at = items.indexOf(menu.getRootNode().activeElement);
+    if (event.key === "Escape") {
+      closeMenu();
+      button.focus();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      items[(at + step + items.length) % items.length]?.focus();
+    }
+  }
+
+  async function choose(choice) {
+    closeMenu();
+    const answer = await send({ type: "download-choice", choice });
+    flash(answer?.ok ? "Sent to OpenDM" : answer?.error || "OpenDM is not available", answer?.ok ? 1400 : 3500);
   }
 
   addEventListener(
@@ -140,4 +279,3 @@
   );
   addEventListener("scroll", () => host && current && host.style.display !== "none" && place(), { capture: true, passive: true });
 })();
-

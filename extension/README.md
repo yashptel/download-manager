@@ -17,11 +17,19 @@ starts.
   with it.
 - **Right-click menu:** Download with OpenDM (a link, image, video or audio),
   Download selected links with OpenDM, Download all links with OpenDM.
-- **Finds media.** HLS and DASH playlists and direct audio or video files the
-  page loads are listed per tab in the toolbar popup, with a count on the
-  toolbar button. A **Download video** button appears over videos on hover.
-  Streams are saved as MP4, named after the page title; the engine downloads
-  the segments and remuxes them.
+- **Finds media** three ways: the network (any response with a media type or
+  extension); `page.js`, which runs in the page's own JavaScript world and
+  reads what the page's scripts fetch (playlists, and playlist URLs inside
+  JSON answers) and playlists a player builds in memory as a blob: URL; and
+  a scan of the page's inline scripts and video metadata tags. A playlist the
+  page received keeps its content, so the app downloads exactly what the page
+  saw. Quality playlists are hidden behind their master playlist.
+- **Quality menu.** A **Download video** button appears over videos on hover;
+  it opens a menu of every video quality (resolution, frame rate, codec and
+  estimated size), audio-only tracks, and plain files. The toolbar popup
+  shows the same list. The qualities come from OpenDM's engine, which reads
+  the playlist; the chosen tracks are downloaded and muxed into MP4 (or MKV
+  for codecs MP4 cannot carry), named after the page title.
 - **Starts OpenDM** in the background when there is something to hand over
   and it is not running. Opening the browser alone never starts it.
 
@@ -56,7 +64,13 @@ repeats.
 | --- | --- |
 | `{ type: "hello", start, browser, version }` | `{ type: "hello", app, version, rules }`. The first message on a port; with `start: false` the host answers `{ type: "error", code: "not-running" }` instead of starting OpenDM. |
 | `{ type: "download", source, items: [...] }` | `{ result: "accepted" }` or `{ result: "fallback", reason }`. `source` is `download`, `link`, `links` or `media`; each item has `url` and optionally `referrer`, `cookie`, `userAgent`, `filename`, `filenameSource` (`browser`, `title` or `suggested`), `mime`, `size` and `headers`. |
+| `{ type: "inspect", item }` | `{ result: "ready", presentation: { live, durationMs, tracks: [{ id, type, language, codec, width, height, bandwidth, frameRate }] } }` or `{ result: "failed", reason }`. `item` is a stream item as below. The app has its engine read the playlist with a hidden task that it removes again. |
 | (pushed by the app) | `{ type: "rules", rules: { capture, extensions, excludedSites, minSize } }` whenever the settings change. |
+
+Stream items add `mediaKind` (`hls` or `dash`), optionally `mediaManifest` (the
+playlist text the page received, at most 2 MB), and for a chosen quality
+`mediaVideo` and `mediaAudio` (`best`, `none` or a track ID from `inspect`)
+and `mediaFormat` (`mp4` or `mkv`).
 
 "Accepted" means OpenDM has the download; its own dialog decides the rest.
 The rules come from the app's settings (`core/src/settings.rs`); until the
@@ -71,4 +85,6 @@ no such hook; the download is paused as soon as it is created.
 `tests/browser/run.sh` runs Google Chrome and Firefox against a local test site
 with this extension, the host and `build/OpenDM.app`: capture with the app
 starting itself, the forwarded cookie, referer and user agent, Alt-click,
-HLS detection and an MP4 result, the video button, and "all links".
+a master playlist found inside a JSON answer, the quality menu (in the page
+and the popup) with a 360p choice giving a 360p MP4, the page script running
+in Firefox, and "all links".

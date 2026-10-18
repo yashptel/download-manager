@@ -1,7 +1,7 @@
 // Chrome test: Google Chrome + OpenDM Connect + opendm-host + OpenDM.
 // Drives Chrome over raw CDP so the browser's own download handling stays in
 // charge (Playwright would take downloads over).
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -65,6 +65,31 @@ class Cdp {
     const { data } = await this.send("Page.captureScreenshot", { format: "png" });
     fs.writeFileSync(path, Buffer.from(data, "base64"));
   }
+  /** Elements with a class, closed shadow roots included, with their text and center. */
+  async find(className) {
+    const { root } = await this.send("DOM.getDocument", { depth: -1, pierce: true });
+    const found = [];
+    const textOf = (node) => (node.nodeType === 3 ? node.nodeValue : (node.children ?? []).map(textOf).join(" "));
+    const walk = (node) => {
+      const attributes = node.attributes ?? [];
+      const classes = attributes[attributes.indexOf("class") + 1] ?? "";
+      if (attributes.includes("class") && classes.split(" ").includes(className)) found.push(node);
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) walk(child);
+    };
+    walk(root);
+    return Promise.all(
+      found.map(async (node) => {
+        const { model } = await this.send("DOM.getBoxModel", { backendNodeId: node.backendNodeId });
+        const [x1, y1, , , x3, y3] = model.border;
+        return { text: textOf(node).replace(/\s+/g, " ").trim(), x: (x1 + x3) / 2, y: (y1 + y3) / 2 };
+      }),
+    );
+  }
+  async click(x, y) {
+    await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+    await this.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    await this.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+  }
 }
 
 const targets = async () => (await fetch("http://127.0.0.1:" + PORT + "/json/list")).json();
@@ -74,6 +99,8 @@ function serverRequests(path) {
 }
 const engineRequests = (path) => serverRequests(path).filter((r) => !r.headers["Sec-Fetch-Dest"] && !r.headers["sec-fetch-dest"]);
 const listFiles = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir, { recursive: true }).map(String) : []);
+const videoHeight = (file) =>
+  execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", file]).toString().trim();
 
 // ─── Setup ──────────────────────────────────────────────────────────────
 for (const dir of [DATA, PROFILE + "/Default", PROFILE + "/NativeMessagingHosts", APP_DL, BROWSER_DL]) fs.mkdirSync(dir, { recursive: true });
@@ -142,54 +169,71 @@ try {
   const zips = listFiles(APP_DL).filter((f) => f.includes("Quarterly Report"));
   check("OpenDM did not get the Alt-click download", zips.length === 1, zips.join(", "));
 
-  // 3. The HLS playlist the page fetched shows up as media.
+  // 3. The page's script finds the master playlist inside a JSON answer and
+  //    loads it plus one quality, as a player does.
   await page.send("Page.navigate", { url: SITE + "/index.html" });
   const tabId = await until("the tab", 5000, () => sw.evaluate("chrome.tabs.query({ url: '" + SITE + "/*' }).then(tabs => tabs[0]?.id)"));
   const found = await until("media", 8000, async () => {
-    const list = await sw.evaluate("(media.get(" + tabId + ") ?? []).map(e => e.kind + ' ' + e.url)");
-    return list.some((e) => e.startsWith("HLS")) && list;
+    const list = await sw.evaluate("(media.get(" + tabId + ") ?? []).map(e => [e.kind, e.url, Boolean(e.content), Boolean(e.variant)].join(' '))");
+    return list.some((e) => /master\.m3u8\?token=t1 true false$/.test(e)) && list.some((e) => /720\/stream\.m3u8 true true$/.test(e)) && list;
   });
-  check("HLS playlist is detected", Boolean(found), JSON.stringify(found));
+  check("master playlist is found with its content, its quality playlist marked", Boolean(found), JSON.stringify(found));
+  const visible = await sw.evaluate("visibleMedia(" + tabId + ").map(e => e.url)");
+  check("only the master playlist is listed", visible.length === 1 && visible[0].includes("master.m3u8"), JSON.stringify(visible));
   const badge = await sw.evaluate("chrome.action.getBadgeText({ tabId: " + tabId + " })");
   check("toolbar badge counts it", badge === "1", "badge " + JSON.stringify(badge));
+
+  // 4. The quality menu: OpenDM's engine reads the playlist.
+  const menu = JSON.parse(await sw.evaluate("formats(" + tabId + ").then(r => JSON.stringify(r))"));
+  const labels = menu.groups.flatMap((g) => g.options.map((o) => g.title + ": " + o.label + " (" + o.detail + ")"));
+  check("menu lists both qualities", labels.some((l) => l.startsWith("Video: 720p")) && labels.some((l) => l.startsWith("Video: 360p")), labels.join(", "));
 
   // The popup, opened in a tab for the screenshot.
   const popupTarget = await (await fetch("http://127.0.0.1:" + PORT + "/json/new?chrome-extension://" + ID + "/popup.html?tab=" + tabId, { method: "PUT" })).json();
   const popup = await Cdp.open(popupTarget.webSocketDebuggerUrl);
   await popup.send("Page.enable");
-  await popup.send("Emulation.setDeviceMetricsOverride", { width: 340, height: 400, deviceScaleFactor: 2, mobile: false });
-  await sleep(1200);
+  await popup.send("Emulation.setDeviceMetricsOverride", { width: 340, height: 420, deviceScaleFactor: 2, mobile: false });
+  const popupText = await until("the popup's qualities", 10000, async () => {
+    const text = await popup.evaluate("document.body.innerText");
+    return text.includes("720p") && text;
+  });
   await popup.screenshot(ROOT + "/popup.png");
-  const popupText = await popup.evaluate("document.body.innerText");
-  check("popup shows the connection and the stream", popupText.includes("Connected") && popupText.includes("stream.m3u8"), popupText.replace(/\n+/g, " | "));
+  check("popup shows the connection and the qualities", Boolean(popupText) && popupText.includes("Connected") && popupText.includes("360p"), String(popupText).replace(/\n+/g, " | "));
   await fetch("http://127.0.0.1:" + PORT + "/json/close/" + popupTarget.id);
 
-  // 4. Downloading the stream gives an MP4 named after the page.
-  await sw.evaluate("downloadBestMedia(" + tabId + ").then(() => 'ok')");
+  // 5. Picking 360p gives a 360p MP4 named after the page.
+  const low = menu.groups[0].options.find((o) => o.label === "360p");
+  await sw.evaluate("downloadChoice(" + tabId + ", " + JSON.stringify(low.choice) + ").then(() => 'ok')");
   const video = await until("the stream's file", 30000, async () => listFiles(APP_DL).find((f) => f === "Video/Big Buck Test Video.mp4"));
   check("HLS stream is saved as an MP4 named after the page", Boolean(video), listFiles(APP_DL).join(", "));
+  if (video) check("it is the 360p quality", videoHeight(APP_DL + "/" + video) === "360", videoHeight(APP_DL + "/" + video));
 
-  // 5. The video button.
+  // 6. The video button opens the same menu; its file entry downloads the clip.
   await page.send("Page.bringToFront");
   const box = await page.evaluate("(() => { const r = document.getElementById('video').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()");
   await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x + box.w / 2, y: box.y + box.h / 2 });
   await sleep(400);
-  await page.screenshot(ROOT + "/video-button.png");
   const shown = await page.evaluate("getComputedStyle(document.querySelector('opendm-connect')).display");
   check("video button appears on hover", shown === "block", shown);
-  // The button sits 10 px inside the video's top-right corner.
-  const bx = box.x + box.w - 70, by = box.y + 25;
-  await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: bx, y: by });
-  await page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: bx, y: by, button: "left", clickCount: 1 });
-  await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: bx, y: by, button: "left", clickCount: 1 });
+  const [main] = await page.find("main");
+  await page.click(main.x, main.y);
+  const options = await until("the menu", 10000, async () => {
+    const found = await page.find("option");
+    return found.length && found;
+  });
+  await sleep(300); // The menu's opening animation.
+  await page.screenshot(ROOT + "/video-menu.png");
+  check("video button opens the quality menu", Boolean(options) && options.some((o) => o.text.startsWith("720p")), (options || []).map((o) => o.text).join(" | "));
+  const file = (options || []).find((o) => o.text.startsWith("WEBM"));
+  if (file) await page.click(file.x, file.y);
   const clip = await until("the clip", 20000, async () => listFiles(APP_DL).find((f) => f.endsWith(".webm")));
-  check("video button sends the video to OpenDM", Boolean(clip), clip);
+  check("the menu's file entry sends the video to OpenDM", Boolean(clip), clip);
 
-  // 6. "Download all links" hands over every link on the page.
+  // 7. "Download all links" hands over every link on the page.
   const links = await sw.evaluate(
     "chrome.scripting.executeScript({ target: { tabId: " + tabId + " }, func: collectLinks, args: [false] }).then(([r]) => r.result)",
   );
-  check("all links are collected", links.length === 3, JSON.stringify(links));
+  check("all links are collected", links.length === 2, JSON.stringify(links));
   const handed = await sw.evaluate("Promise.all(" + JSON.stringify(links) + ".map(u => requestItem(u, { referrer: '" + SITE + "/' }))).then(items => handOver('links', items))");
   check("OpenDM accepts the links", handed === true);
 } catch (error) {
@@ -200,4 +244,3 @@ try {
 const failed = results.filter((r) => !r.ok).length;
 console.log("\n" + (results.length - failed) + " passed, " + failed + " failed");
 process.exit(failed ? 1 : 0);
-

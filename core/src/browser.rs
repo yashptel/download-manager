@@ -10,6 +10,9 @@
 //! browser then drops its copy; the app's own dialog decides the rest. When
 //! the app cannot take it, the answer is "fallback" and the browser keeps
 //! downloading, so a download is never lost.
+//!
+//! "inspect" reads a stream's video and audio tracks for the extension's
+//! quality menu. It takes a moment, so it runs beside the other messages.
 
 use crate::{BrowserSource, EngineState, NewDownload, Shared};
 use serde_json::{Value, json};
@@ -19,6 +22,8 @@ use tokio::sync::mpsc;
 
 /// More links than any page should hand over at once.
 const MAX_ITEMS: usize = 10_000;
+/// The extension sends a playlist only when it is smaller than this.
+const MAX_MANIFEST: usize = 2 * 1024 * 1024;
 
 /// Request headers the engine sets itself, or that would break a download.
 const SKIPPED_HEADERS: &[&str] = &[
@@ -120,6 +125,15 @@ async fn connection<S: AsyncRead + AsyncWrite + Send + 'static>(shared: Arc<Shar
         let Ok(message) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
+        if message["type"] == "inspect" {
+            let (shared, sender) = (shared.clone(), sender.clone());
+            tokio::spawn(async move {
+                let mut answer = inspect(&shared, &message).await;
+                answer["id"] = message["id"].clone();
+                let _ = sender.send(answer.to_string());
+            });
+            continue;
+        }
         if let Some(mut answer) = respond(&shared, &message) {
             if let Some(id) = message.get("id") {
                 answer["id"] = id.clone();
@@ -204,6 +218,16 @@ fn accept(shared: &Shared, message: &Value) -> Result<(), String> {
     Ok(())
 }
 
+async fn inspect(shared: &Shared, message: &Value) -> Value {
+    let Some(download) = parse_item(&message["item"]) else {
+        return json!({ "result": "failed", "reason": "not a stream URL" });
+    };
+    match crate::media::probe(shared, &download).await {
+        Ok(presentation) => json!({ "result": "ready", "presentation": presentation }),
+        Err(reason) => json!({ "result": "failed", "reason": reason }),
+    }
+}
+
 fn parse_item(item: &Value) -> Option<NewDownload> {
     let text = |key: &str| {
         item[key]
@@ -235,6 +259,16 @@ fn parse_item(item: &Value) -> Option<NewDownload> {
         text("filename").map(|name| name.rsplit(['/', '\\']).next().unwrap_or(&name).to_string());
     let filename_source = text("filenameSource")
         .filter(|source| ["browser", "title", "suggested"].contains(&source.as_str()));
+    // Track choices go to the engine as options, so only plain values pass.
+    let track = |key: &str| {
+        text(key).filter(|value| {
+            value.len() <= 128
+                && value
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        })
+    };
+    let media_kind = text("mediaKind").filter(|kind| kind == "hls" || kind == "dash");
     Some(NewDownload {
         url,
         filename_source: filename.as_ref().and(filename_source),
@@ -246,6 +280,15 @@ fn parse_item(item: &Value) -> Option<NewDownload> {
         dir: None,
         mime: text("mime"),
         size: item["size"].as_u64().filter(|size| *size > 0),
+        media_manifest: media_kind
+            .as_ref()
+            .and(item["mediaManifest"].as_str())
+            .filter(|content| !content.is_empty() && content.len() <= MAX_MANIFEST)
+            .map(String::from),
+        media_kind,
+        media_video: track("mediaVideo"),
+        media_audio: track("mediaAudio"),
+        media_format: text("mediaFormat").filter(|format| format == "mp4" || format == "mkv"),
     })
 }
 

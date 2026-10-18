@@ -7,6 +7,7 @@
 mod browser;
 mod db;
 mod engine;
+mod media;
 mod rpc;
 mod settings;
 mod tasks;
@@ -109,6 +110,23 @@ pub struct NewDownload {
     pub mime: Option<String>,
     #[uniffi(default = None)]
     pub size: Option<u64>,
+    /// "hls" or "dash" when this is a stream, so the engine reads it as one
+    /// whatever its URL looks like.
+    #[uniffi(default = None)]
+    pub media_kind: Option<String>,
+    /// The playlist as the page received it, used instead of fetching the
+    /// URL again (pages that build or sign their playlists in script).
+    #[uniffi(default = None)]
+    pub media_manifest: Option<String>,
+    /// The stream's video and audio track: "best", "none" or a track ID
+    /// from the quality menu.
+    #[uniffi(default = None)]
+    pub media_video: Option<String>,
+    #[uniffi(default = None)]
+    pub media_audio: Option<String>,
+    /// "mp4" or "mkv".
+    #[uniffi(default = None)]
+    pub media_format: Option<String>,
 }
 
 /// How a browser handed downloads to the app.
@@ -187,6 +205,8 @@ pub(crate) struct Shared {
     pub visible: AtomicBool,
     /// Connected browser extensions, for pushing capture rules.
     pub browsers: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
+    /// Stream probes running now; each gets an extra engine slot.
+    pub probe_slots: Mutex<u32>,
 }
 
 impl Shared {
@@ -262,6 +282,7 @@ impl DownloadCore {
             wake: Notify::new(),
             visible: AtomicBool::new(true),
             browsers: Mutex::new(Vec::new()),
+            probe_slots: Mutex::new(0),
         });
         Ok(Arc::new(DownloadCore {
             runtime,
