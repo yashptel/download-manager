@@ -42,6 +42,9 @@ internal sealed class DownloadStore
 
     public GlobalStats Stats { get; private set; } = new(0, 0, 0, 0);
 
+    /// <summary>The current row of a download, or null when it is not in the list.</summary>
+    public TaskRow? Row(string id) => byId.TryGetValue(id, out var item) ? item.Row : null;
+
     public EngineState EngineState { get; private set; } = new EngineState.Stopped();
 
     public event Action<IReadOnlyList<RowChange>>? RowsChanged;

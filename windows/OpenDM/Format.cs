@@ -51,12 +51,32 @@ internal static class Format
         _ => $"{seconds / 86_400}d {seconds % 86_400 / 3600}h",
     };
 
+    /// <summary>"45 sec", "4 min 47 sec", "2 hr 5 min", "3 days 4 hr": the progress window's time left.</summary>
+    public static string TimeLeft(ulong? seconds) => seconds switch
+    {
+        null => "",
+        < 60 => $"{seconds} sec",
+        < 3600 => $"{seconds / 60} min {seconds % 60} sec",
+        < 86_400 => $"{seconds / 3600} hr {seconds % 3600 / 60} min",
+        _ => $"{seconds / 86_400} {(seconds / 86_400 == 1 ? "day" : "days")} {seconds % 86_400 / 3600} hr",
+    };
+
+    /// <summary>"88.1 MB of 209.7 MB", or what is known so far.</summary>
+    public static string Amount(TaskRow row) => (row.DoneBytes, row.TotalBytes) switch
+    {
+        (0, 0) => "",
+        (var done, 0) => Bytes(done),
+        (0, var total) => Bytes(total),
+        (var done, var total) when done >= total => Bytes(total),
+        (var done, var total) => $"{Bytes(done)} of {Bytes(total)}",
+    };
+
     public static string Status(TaskRow row) => row.Status switch
     {
         TaskStatus.Downloading => "Downloading",
         TaskStatus.Queued => "Queued",
         TaskStatus.Paused => "Paused",
-        TaskStatus.Complete => "Complete",
+        TaskStatus.Complete => "Completed",
         _ => row.Error ?? "Failed",
     };
 

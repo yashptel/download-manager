@@ -1,6 +1,33 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace OpenDM;
+
+/// <summary>Opening downloaded files and showing them in Explorer.</summary>
+internal static class Shell
+{
+    public static void Open(string path)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(Path.GetFullPath(path)) { UseShellExecute = true });
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"OpenDM: could not open {path}: {error.Message}");
+        }
+    }
+
+    /// <summary>Selects the file in Explorer, or opens its folder when the file is not there.</summary>
+    public static void Reveal(string? path, string dir)
+    {
+        var file = path is null ? null : Path.GetFullPath(path);
+        var arguments = file is not null && File.Exists(file)
+            ? $"/select,\"{file}\""
+            : $"\"{Path.GetFullPath(dir)}\"";
+        Process.Start("explorer.exe", arguments);
+    }
+}
 
 internal static class Native
 {
@@ -47,4 +74,33 @@ internal static class Native
 
     [DllImport("user32.dll")]
     public static extern uint GetDpiForWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    /// <summary>Flashes the window's taskbar button until it comes to the front.</summary>
+    public static void Flash(IntPtr window)
+    {
+        var info = new FlashInfo
+        {
+            Size = (uint)Marshal.SizeOf<FlashInfo>(),
+            Window = window,
+            Flags = 0x2 | 0xC, // FLASHW_TRAY | FLASHW_TIMERNOFG
+        };
+        FlashWindowEx(ref info);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FlashInfo
+    {
+        public uint Size;
+        public IntPtr Window;
+        public uint Flags;
+        public uint Count;
+        public uint Timeout;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool FlashWindowEx(ref FlashInfo info);
 }

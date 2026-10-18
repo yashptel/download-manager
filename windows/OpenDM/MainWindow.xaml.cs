@@ -388,7 +388,9 @@ public sealed partial class MainWindow : Window
     private void Resume(IReadOnlyList<TaskRow> rows)
     {
         var ids = rows.Where(CanResume).Select(row => row.Id).ToArray();
-        if (ids.Length > 0) core.Resume(ids);
+        if (ids.Length == 0) return;
+        core.Resume(ids);
+        ProgressWindow.Show(ids, store, core);
     }
 
     private void Pause(IReadOnlyList<TaskRow> rows)
@@ -422,26 +424,13 @@ public sealed partial class MainWindow : Window
     {
         foreach (var row in rows.Where(row => row.Status == TaskStatus.Complete && row.Path is not null))
         {
-            try
-            {
-                Process.Start(new ProcessStartInfo(Path.GetFullPath(row.Path!)) { UseShellExecute = true });
-            }
-            catch (Exception error)
-            {
-                Debug.WriteLine($"OpenDM: could not open {row.Path}: {error.Message}");
-            }
+            Shell.Open(row.Path!);
         }
     }
 
     private static void Reveal(IReadOnlyList<TaskRow> rows)
     {
-        if (rows.Count == 0) return;
-        var row = rows[0];
-        var file = row.Path is null ? null : Path.GetFullPath(row.Path);
-        var arguments = file is not null && File.Exists(file)
-            ? $"/select,\"{file}\""
-            : $"\"{Path.GetFullPath(row.Dir)}\"";
-        Process.Start("explorer.exe", arguments);
+        if (rows.Count > 0) Shell.Reveal(rows[0].Path, rows[0].Dir);
     }
 
     private static void CopyAddresses(IReadOnlyList<TaskRow> rows)
