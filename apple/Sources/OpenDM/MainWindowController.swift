@@ -7,6 +7,8 @@ private extension NSToolbarItem.Identifier {
     static let pause = Self("pause")
     static let remove = Self("remove")
     static let search = Self("search")
+    static let style = Self("style")
+    static let sort = Self("sort")
 }
 
 /// The main window: category sidebar, download list and toolbar. Menu and
@@ -18,20 +20,47 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private let store: DownloadStore
     private let core: DownloadCore
     private let list: DownloadListViewController
+    private weak var styleGroup: NSToolbarItemGroup?
+    /// The bottom status bar on macOS 26 and later; older systems use the
+    /// window subtitle instead.
+    private var statusLabel: NSTextField?
+    private let downloadDir: URL
+
+    private static let sortKeys: [(title: String, key: String)] = [
+        ("Date Added", "added"), ("Name", "name"), ("Size", "size"), ("Progress", "progress"),
+        ("Speed", "speed"), ("Time Left", "eta"), ("Status", "status"),
+    ]
 
     init(store: DownloadStore, core: DownloadCore) {
         self.store = store
         self.core = core
         list = DownloadListViewController(store: store, core: core)
+        downloadDir = URL(fileURLWithPath: core.settings().downloadDir)
         let categories = core.settings().categories.map(\.name) + ["Other"]
         let sidebar = SidebarViewController(store: store, categories: categories)
 
         let split = NSSplitViewController()
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
-        sidebarItem.minimumThickness = 170
+        sidebarItem.minimumThickness = 210
         sidebarItem.maximumThickness = 280
         split.addSplitViewItem(sidebarItem)
-        split.addSplitViewItem(NSSplitViewItem(viewController: list))
+        let listItem = NSSplitViewItem(viewController: list)
+        if #available(macOS 26, *) {
+            // The list extends under the glass sidebar so the glass has
+            // content to refract; the scroll view insets rows by the safe area.
+            listItem.automaticallyAdjustsSafeAreaInsets = true
+            // A Finder-style status bar; the list scrolls under its glass edge.
+            let label = NSTextField(labelWithString: "")
+            label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            label.textColor = .secondaryLabelColor
+            label.alignment = .center
+            label.lineBreakMode = .byTruncatingTail
+            let bar = NSSplitViewItemAccessoryViewController()
+            bar.view = label
+            listItem.addBottomAlignedAccessoryViewController(bar)
+            statusLabel = label
+        }
+        split.addSplitViewItem(listItem)
         split.splitView.autosaveName = "MainSplit"
 
         let window = NSWindow(
@@ -101,7 +130,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     private func updateSubtitle() {
         let stats = store.stats
-        window?.subtitle = switch store.engineState {
+        let status = switch store.engineState {
         case .starting: "Starting…"
         case .restarting: "Restarting the download engine…"
         case .failed: "The download engine stopped"
@@ -112,6 +141,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case .running where stats.waiting > 0: "\(stats.waiting) waiting"
         case .running: ""
         }
+        guard let statusLabel else {
+            window?.subtitle = status
+            return
+        }
+        let free = (try? downloadDir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+            .volumeAvailableCapacityForImportantUsage
+        let space = free.map { "\(Format.bytes(UInt64(max($0, 0)))) available" }
+        statusLabel.setIfChanged([status, space].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · "))
     }
 
     private func showError(_ message: String) {
@@ -162,6 +199,33 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         list.searchText = sender.stringValue
     }
 
+    // MARK: Style and sorting
+
+    @objc func setListStyle(_ sender: NSMenuItem) {
+        setStyle(ListStyle(rawValue: sender.tag) ?? .cards)
+    }
+
+    @objc private func styleGroupChanged(_ sender: Any?) {
+        guard let group = styleGroup, let style = ListStyle(rawValue: group.selectedIndex) else { return }
+        setStyle(style)
+    }
+
+    private func setStyle(_ style: ListStyle) {
+        list.style = style
+        styleGroup?.selectedIndex = style.rawValue
+    }
+
+    @objc private func sortBy(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        let current = list.sort
+        let ascending = current?.key == key ? current!.ascending : (key == "name" || key == "added")
+        list.setSort(key: key, ascending: ascending)
+    }
+
+    @objc private func sortDirection(_ sender: NSMenuItem) {
+        list.setSort(key: list.sort?.key ?? "added", ascending: sender.tag == 1)
+    }
+
     private func isEnabled(_ action: Selector?) -> Bool {
         let rows = list.selectedRows()
         switch action {
@@ -176,7 +240,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        isEnabled(menuItem.action)
+        switch menuItem.action {
+        case #selector(setListStyle(_:)):
+            menuItem.state = menuItem.tag == list.style.rawValue ? .on : .off
+        case #selector(sortBy(_:)):
+            menuItem.state = (menuItem.representedObject as? String) == (list.sort?.key ?? "added") ? .on : .off
+        case #selector(sortDirection(_:)):
+            menuItem.state = (menuItem.tag == 1) == (list.sort?.ascending ?? true) ? .on : .off
+        default:
+            break
+        }
+        return isEnabled(menuItem.action)
     }
 
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
@@ -186,7 +260,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     // MARK: Toolbar
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .sidebarTrackingSeparator, .add, .resume, .pause, .remove, .flexibleSpace, .search]
+        [.toggleSidebar, .sidebarTrackingSeparator, .add, .resume, .pause, .remove, .flexibleSpace, .style, .sort, .search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -200,6 +274,39 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         case .resume: return button(identifier, "Resume", "play.fill", #selector(resumeSelected(_:)))
         case .pause: return button(identifier, "Pause", "pause.fill", #selector(pauseSelected(_:)))
         case .remove: return button(identifier, "Remove", "trash", #selector(removeSelected(_:)))
+        case .style:
+            let group = NSToolbarItemGroup(
+                itemIdentifier: identifier,
+                images: ListStyle.allCases.map { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: $0.title)! },
+                selectionMode: .selectOne,
+                labels: ListStyle.allCases.map(\.title),
+                target: self,
+                action: #selector(styleGroupChanged(_:))
+            )
+            group.label = "View"
+            group.paletteLabel = "View"
+            group.selectedIndex = list.style.rawValue
+            styleGroup = group
+            return group
+        case .sort:
+            let item = NSMenuToolbarItem(itemIdentifier: identifier)
+            item.image = NSImage(systemSymbolName: "arrow.up.arrow.down", accessibilityDescription: "Sort")
+            item.label = "Sort"
+            item.toolTip = "Sort"
+            let menu = NSMenu()
+            for (title, key) in Self.sortKeys {
+                let entry = menu.addItem(withTitle: title, action: #selector(sortBy(_:)), keyEquivalent: "")
+                entry.target = self
+                entry.representedObject = key
+            }
+            menu.addItem(.separator())
+            for (title, tag) in [("Ascending", 1), ("Descending", 0)] {
+                let entry = menu.addItem(withTitle: title, action: #selector(sortDirection(_:)), keyEquivalent: "")
+                entry.target = self
+                entry.tag = tag
+            }
+            item.menu = menu
+            return item
         case .search:
             let item = NSSearchToolbarItem(itemIdentifier: identifier)
             item.searchField.target = self
@@ -219,6 +326,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
         item.isBordered = true
         item.action = action
+        if #available(macOS 26, *), identifier == .add {
+            // The accent-tinted glass button marks the main action.
+            item.style = .prominent
+        }
         return item
     }
 }

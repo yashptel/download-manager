@@ -131,7 +131,7 @@ final class SidebarViewController: NSViewController, NSTableViewDataSource, NSTa
 }
 
 private final class SidebarCellView: NSTableCellView {
-    private let countLabel = NSTextField(labelWithString: "")
+    private let badge = CountBadge()
 
     init() {
         super.init(frame: .zero)
@@ -139,10 +139,9 @@ private final class SidebarCellView: NSTableCellView {
         let icon = NSImageView()
         let label = NSTextField(labelWithString: "")
         label.lineBreakMode = .byTruncatingTail
-        countLabel.textColor = .secondaryLabelColor
-        countLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-        countLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        for view in [icon, label, countLabel] as [NSView] {
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        badge.setContentCompressionResistancePriority(.required, for: .horizontal)
+        for view in [icon, label, badge] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -154,9 +153,9 @@ private final class SidebarCellView: NSTableCellView {
             icon.widthAnchor.constraint(equalToConstant: 18),
             label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            countLabel.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 6),
-            countLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            badge.leadingAnchor.constraint(greaterThanOrEqualTo: label.trailingAnchor, constant: 6),
+            badge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            badge.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
 
@@ -165,6 +164,46 @@ private final class SidebarCellView: NSTableCellView {
     func show(title: String, symbol: String, count: Int) {
         textField?.stringValue = title
         imageView?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        countLabel.stringValue = count > 0 ? "\(count)" : ""
+        badge.count = count
+    }
+}
+
+/// A small pill with a count, hidden at zero.
+private final class CountBadge: NSView {
+    var count = 0 {
+        didSet {
+            guard count != oldValue else { return }
+            isHidden = count == 0
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+
+    private var text: NSAttributedString {
+        NSAttributedString(
+            string: NumberFormatter.localizedString(from: NSNumber(value: count), number: .decimal),
+            attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: max(ceil(text.size().width) + 12, 20), height: 17)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.quaternaryLabelColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+        let size = text.size()
+        text.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2))
     }
 }
