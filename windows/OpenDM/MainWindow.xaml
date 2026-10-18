@@ -155,7 +155,9 @@
                                     <!-- The top margin moves the bar down 1 px to the middle of the
                                          digits beside it; text sits low in its line box. -->
                                     <Grid Height="3" Margin="0,2,0,0" VerticalAlignment="Center" Visibility="{x:Bind IsDeterminate, Mode=OneWay}">
-                                        <Rectangle Height="1" VerticalAlignment="Center" RadiusX="0.5" RadiusY="0.5"
+                                        <!-- Not rounded to whole pixels: at 125% and 150% a rounded 1 px track
+                                             sits half a pixel above the middle of the 3 px indicator. -->
+                                        <Rectangle Height="1" VerticalAlignment="Center" RadiusX="0.5" RadiusY="0.5" UseLayoutRounding="False"
                                                    Fill="{ThemeResource ControlStrongStrokeColorDefaultBrush}" />
                                         <Grid>
                                             <Grid.RenderTransform>
