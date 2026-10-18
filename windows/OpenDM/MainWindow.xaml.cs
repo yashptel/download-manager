@@ -324,10 +324,34 @@ public sealed partial class MainWindow : Window
         }
         foreach (var (key, (button, title)) in headers)
         {
-            button.Content = key == column ? $"{title} {(sortAscending ? "\u25B2" : "\u25BC")}" : title;
+            button.Content = key == column ? SortedHeader(title, sortAscending) : title;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button,
+                key == column ? $"{title}, sorted {(sortAscending ? "ascending" : "descending")}" : title);
         }
         Rebuild();
     }
+
+    /// <summary>
+    /// A header title followed by an up or down arrow from Segoe Fluent Icons,
+    /// as tall as the capitals and centered on them.
+    /// </summary>
+    private static StackPanel SortedHeader(string title, bool ascending) => new()
+    {
+        Orientation = Orientation.Horizontal,
+        Spacing = 6,
+        Children =
+        {
+            new TextBlock { Text = title },
+            new FontIcon
+            {
+                Glyph = ascending ? "\uE74A" : "\uE74B",
+                FontSize = 10,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 2, 0, 0),
+            },
+        },
+    };
 
     private void Search_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
