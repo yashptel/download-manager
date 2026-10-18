@@ -4,6 +4,7 @@
 //! and settings. UI calls return immediately; results arrive through the
 //! `CoreListener` the app passes in, always as changed rows only.
 
+mod browser;
 mod db;
 mod engine;
 mod rpc;
@@ -79,6 +80,50 @@ pub struct GlobalStats {
     pub waiting: u32,
 }
 
+/// One download to start, with whatever the browser knows about it.
+#[derive(Debug, Clone, Default, PartialEq, uniffi::Record)]
+pub struct NewDownload {
+    pub url: String,
+    /// A name for the file. The engine still prefers Content-Disposition
+    /// unless the source is "browser".
+    #[uniffi(default = None)]
+    pub filename: Option<String>,
+    /// "browser" (the browser resolved the name), "title" (from the page
+    /// title) or "suggested".
+    #[uniffi(default = None)]
+    pub filename_source: Option<String>,
+    #[uniffi(default = None)]
+    pub referer: Option<String>,
+    #[uniffi(default = None)]
+    pub cookie: Option<String>,
+    #[uniffi(default = None)]
+    pub user_agent: Option<String>,
+    /// Extra request headers as "Name: value".
+    #[uniffi(default = [])]
+    pub headers: Vec<String>,
+    /// A save folder chosen by the user instead of the category folder.
+    #[uniffi(default = None)]
+    pub dir: Option<String>,
+    /// What the browser saw, for showing before the download starts.
+    #[uniffi(default = None)]
+    pub mime: Option<String>,
+    #[uniffi(default = None)]
+    pub size: Option<u64>,
+}
+
+/// How a browser handed downloads to the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum BrowserSource {
+    /// A download the browser started, captured by the extension.
+    Download,
+    /// "Download with OpenDM" on one link, image or video.
+    Link,
+    /// The selected links or all links on a page.
+    Links,
+    /// A video or audio stream found on the page.
+    Media,
+}
+
 /// Implemented by the app. Called on a background thread.
 #[uniffi::export(with_foreign)]
 pub trait CoreListener: Send + Sync {
@@ -87,6 +132,10 @@ pub trait CoreListener: Send + Sync {
     fn stats_changed(&self, stats: GlobalStats);
     fn engine_state_changed(&self, state: EngineState);
     fn error(&self, message: String);
+    /// The browser handed over downloads. The app confirms them with the
+    /// user, or starts them with `add_downloads`. The browser has already
+    /// dropped its own copy.
+    fn browser_downloads(&self, downloads: Vec<NewDownload>, source: BrowserSource);
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -136,6 +185,8 @@ pub(crate) struct Shared {
     /// Requests an immediate poll.
     pub wake: Notify,
     pub visible: AtomicBool,
+    /// Connected browser extensions, for pushing capture rules.
+    pub browsers: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<String>>>,
 }
 
 impl Shared {
@@ -210,6 +261,7 @@ impl DownloadCore {
             restart: Notify::new(),
             wake: Notify::new(),
             visible: AtomicBool::new(true),
+            browsers: Mutex::new(Vec::new()),
         });
         Ok(Arc::new(DownloadCore {
             runtime,
@@ -226,6 +278,7 @@ impl DownloadCore {
         }
         *supervisor = Some(self.runtime.spawn(engine::supervise(self.shared.clone())));
         self.runtime.spawn(tasks::run_poller(self.shared.clone()));
+        self.runtime.spawn(browser::serve(self.shared.clone()));
     }
 
     /// Saves progress and stops the engine. Blocks for at most a few seconds.
@@ -264,6 +317,26 @@ impl DownloadCore {
         self.run(move |shared| async move { tasks::add_urls(&shared, urls, start_paused).await });
     }
 
+    /// Starts downloads with their names, folders and request headers.
+    pub fn add_downloads(&self, downloads: Vec<NewDownload>, start_paused: bool) {
+        self.run(move |shared| async move {
+            tasks::add(&shared, downloads, start_paused)
+                .await
+                .map(|_| ())
+        });
+    }
+
+    /// Registers `host_path`, the bundled `opendm-host`, with the installed
+    /// browsers so the extension can reach the app. Returns the manifests
+    /// written. Call it at every launch; it rewrites only what changed.
+    pub fn install_browser_host(&self, host_path: String) -> Result<Vec<String>, CoreError> {
+        let written = opendm_host::install(&PathBuf::from(host_path), &self.shared.data_dir)?;
+        Ok(written
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect())
+    }
+
     pub fn pause(&self, ids: Vec<String>) {
         self.run(move |shared| async move { tasks::pause(&shared, ids).await });
     }
@@ -298,6 +371,7 @@ impl DownloadCore {
             .map(|(key, value)| (key.to_string(), value.into()))
             .collect();
         *self.shared.settings.lock().unwrap() = settings;
+        browser::push_rules(&self.shared);
         self.run(move |shared| async move {
             match shared.current_rpc() {
                 Some(rpc) => rpc

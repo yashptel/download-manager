@@ -30,6 +30,8 @@ final class DownloadStore {
     private(set) var stats = GlobalStats(downloadSpeed: 0, uploadSpeed: 0, active: 0, waiting: 0)
     private(set) var engineState: EngineState = .stopped
     var onError: ((String) -> Void)?
+    /// Downloads the browser extension handed over.
+    var onBrowserDownloads: (([NewDownload], BrowserSource) -> Void)?
 
     private struct WeakObserver { weak var value: DownloadStoreObserver? }
     private var observers: [WeakObserver] = []
@@ -107,6 +109,9 @@ private final class Listener: CoreListener, @unchecked Sendable {
     func statsChanged(stats: GlobalStats) { onMain { $0.setStats(stats) } }
     func engineStateChanged(state: EngineState) { onMain { $0.setEngineState(state) } }
     func error(message: String) { onMain { $0.report(message) } }
+    func browserDownloads(downloads: [NewDownload], source: BrowserSource) {
+        onMain { $0.onBrowserDownloads?(downloads, source) }
+    }
 
     private func onMain(_ body: @escaping @MainActor (DownloadStore) -> Void) {
         DispatchQueue.main.async { [weak self] in

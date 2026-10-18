@@ -23,8 +23,9 @@ $enginePlatform = @{ x64 = "windows-x86_64.exe"; arm64 = "windows-arm64.exe" }[$
 $engine = & (Join-Path $PSScriptRoot "fetch-engine.ps1") -Platform $enginePlatform
 
 Invoke-Native rustup @("target", "add", $triple)
-Invoke-Native cargo @("build", "--release", "-p", "opendm-core", "--target", $triple)
+Invoke-Native cargo @("build", "--release", "-p", "opendm-core", "-p", "opendm-host", "--target", $triple)
 $library = Join-Path $root "target\$triple\release\opendm_core.dll"
+$hostExe = Join-Path $root "target\$triple\release\opendm-host.exe"
 
 # C# bindings from the library's UniFFI metadata. The generator version must
 # match the uniffi version in core\Cargo.toml (0.31).
@@ -42,6 +43,7 @@ $native = Join-Path $app "Native"
 if (Test-Path $native) { Remove-Item -Recurse -Force $native }
 New-Item -ItemType Directory -Force -Path $native | Out-Null
 Copy-Item $library $native
+Copy-Item $hostExe $native
 Copy-Item $engine (Join-Path $native "aria2-next.exe")
 Copy-Item (Join-Path $root "vendor\aria2-next\bin\COPYING") (Join-Path $native "aria2-next-COPYING.txt")
 Copy-Item (Join-Path $root "LICENSE") (Join-Path $native "LICENSE.txt")

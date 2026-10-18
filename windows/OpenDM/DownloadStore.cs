@@ -48,6 +48,8 @@ internal sealed class DownloadStore
     public event Action<IReadOnlySet<string>>? RowsRemoved;
     public event Action? StatusChanged;
     public event Action<string>? ErrorRaised;
+    /// <summary>Downloads the browser extension handed over.</summary>
+    public event Action<NewDownload[], BrowserSource>? BrowserDownloadsReceived;
 
     /// <summary>
     /// With OPENDM_UI_TIMING set to a file path, each batch of changed rows
@@ -142,6 +144,9 @@ internal sealed class DownloadStore
         });
 
         public void Error(string message) => Post(() => store.ErrorRaised?.Invoke(message));
+
+        public void BrowserDownloads(NewDownload[] downloads, BrowserSource source) =>
+            Post(() => store.BrowserDownloadsReceived?.Invoke(downloads, source));
 
         private void Post(Action action) => dispatcher.TryEnqueue(() => action());
     }

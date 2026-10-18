@@ -35,7 +35,7 @@
     <Content Include="Assets\OpenDM.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\OpenDM-*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\Tray-*.ico" CopyToOutputDirectory="PreserveNewest" />
-    <!-- Filled by scripts/build-windows.ps1: opendm_core.dll, aria2-next.exe and licenses. -->
+    <!-- Filled by scripts/build-windows.ps1: opendm_core.dll, opendm-host.exe, aria2-next.exe and licenses. -->
     <Content Include="Native\**" Link="%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

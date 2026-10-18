@@ -35,8 +35,9 @@ for arch in $archs; do
         x86_64) triple=x86_64-apple-darwin ;;
         *) echo "Unsupported architecture $arch" >&2; exit 1 ;;
     esac
-    cargo build --release -p opendm-core --target "$triple"
+    cargo build --release -p opendm-core -p opendm-host --target "$triple"
     libraries="$libraries target/$triple/release/libopendm_core.a"
+    hosts="${hosts:-} target/$triple/release/opendm-host"
     scripts/fetch-engine.sh "macos-$arch" > /dev/null
     engines="$engines vendor/aria2-next/bin/aria2-next-macos-$arch"
     swift_archs="$swift_archs --arch $arch"
@@ -44,6 +45,7 @@ for arch in $archs; do
 done
 lipo -create $libraries -output "$work/libopendm_core.a"
 lipo -create $engines -output "$work/aria2-next"
+lipo -create $hosts -output "$work/opendm-host"
 
 # Swift bindings and the XCFramework the Swift package links against.
 cargo run -q -p uniffi-bindgen -- generate --library "$bindings_library" --language swift --out-dir "$work/bindings"
@@ -69,6 +71,7 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binaries/OpenDM" "$app/Contents/MacOS/OpenDM"
 cp "$work/aria2-next" "$app/Contents/MacOS/aria2-next"
+cp "$work/opendm-host" "$app/Contents/MacOS/opendm-host"
 cp LICENSE "$app/Contents/Resources/LICENSE"
 cp apple/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 cp vendor/aria2-next/bin/COPYING "$app/Contents/Resources/aria2-next-COPYING"
@@ -76,5 +79,6 @@ sed "s/@VERSION@/$version/g" apple/Info.plist > "$app/Contents/Info.plist"
 
 identity=${CODESIGN_IDENTITY:--}
 codesign --force --options runtime --sign "$identity" "$app/Contents/MacOS/aria2-next"
+codesign --force --options runtime --sign "$identity" "$app/Contents/MacOS/opendm-host"
 codesign --force --options runtime --sign "$identity" "$app"
 echo "$app"

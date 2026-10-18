@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>OpenDM</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon-32.png" width="22" height="22" alt="">
+    <div class="title">
+      <h1>OpenDM</h1>
+      <p id="status"><span class="dot"></span><span id="status-text">Connecting…</span></p>
+    </div>
+    <button id="start" class="small" hidden>Start OpenDM</button>
+  </header>
+
+  <section id="access" class="banner" hidden>
+    <p>OpenDM needs access to websites to see downloads and videos.</p>
+    <button id="grant" class="small">Allow on all sites</button>
+  </section>
+
+  <label class="row switch">
+    <span>
+      <strong>Capture downloads</strong>
+      <small id="capture-note">Alt-click a link to download it in the browser instead.</small>
+    </span>
+    <input id="capture" type="checkbox" role="switch">
+  </label>
+
+  <section>
+    <h2>On this page</h2>
+    <ul id="media"></ul>
+    <p id="empty" class="empty">No videos or audio yet. Play one for a moment and it shows up here.</p>
+  </section>
+
+  <p id="error" class="error" hidden></p>
+  <script src="popup.js"></script>
+</body>
+</html>
+

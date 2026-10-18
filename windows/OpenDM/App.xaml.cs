@@ -32,10 +32,43 @@ public partial class App : Application
             return;
         }
         store.Load(core);
+        store.BrowserDownloadsReceived += (downloads, _) =>
+        {
+            // Until the Download File Info dialog exists, start right away
+            // and show the list so the handoff is visible.
+            core.AddDownloads(downloads, false);
+            ShowMainWindow();
+        };
         window = new MainWindow(store, core);
         tray = new TrayIcon(store, core, ShowMainWindow, Quit);
         core.Start();
-        window.ShowAndActivate();
+        InstallBrowserHost(core);
+        // The browser extension starts OpenDM with --background when it is not running.
+        if (!Environment.GetCommandLineArgs().Contains("--background"))
+        {
+            window.ShowAndActivate();
+        }
+    }
+
+    /// <summary>
+    /// Lets installed browsers start opendm-host.exe, which connects the
+    /// extension to this app. Rewritten at each launch in case the app moved.
+    /// </summary>
+    private static void InstallBrowserHost(DownloadCore core)
+    {
+        var host = Path.Combine(AppContext.BaseDirectory, "opendm-host.exe");
+        if (!File.Exists(host)) return;
+        Task.Run(() =>
+        {
+            try
+            {
+                core.InstallBrowserHost(host);
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine($"OpenDM: could not register the browser host: {error.Message}");
+            }
+        });
     }
 
     /// <summary>Called when another launch redirects to this instance.</summary>

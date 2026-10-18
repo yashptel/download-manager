@@ -10,7 +10,7 @@ use crate::db::progress;
 use crate::engine::random_hex;
 use crate::rpc::Rpc;
 use crate::settings::{OTHER_CATEGORY, Settings};
-use crate::{GlobalStats, Shared, TaskRow, TaskStatus};
+use crate::{GlobalStats, NewDownload, Shared, TaskRow, TaskStatus};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -460,22 +460,74 @@ fn update_from_engine(task: &mut Task, status: &Value, settings: &Settings, now:
 // User actions. Each one changes the engine, then marks the tasks dirty so
 // the next tick (requested immediately) reports their new state.
 
+impl NewDownload {
+    pub fn url(url: &str) -> NewDownload {
+        NewDownload {
+            url: url.to_string(),
+            ..NewDownload::default()
+        }
+    }
+
+    /// Per-download engine options beyond the folder and the GID.
+    fn engine_options(&self, options: &mut serde_json::Map<String, Value>) {
+        let mut put = |key: &str, value: &Option<String>| {
+            if let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+                options.insert(key.into(), json!(value));
+            }
+        };
+        put("filename-hint", &self.filename);
+        if self.filename.is_some() {
+            put("filename-hint-source", &self.filename_source);
+        }
+        put("referer", &self.referer);
+        put("user-agent", &self.user_agent);
+        let mut headers: Vec<String> = self
+            .headers
+            .iter()
+            // Header values must not smuggle in a second header.
+            .filter(|header| header.contains(':') && !header.contains(['\r', '\n']))
+            .cloned()
+            .collect();
+        if let Some(cookie) = self
+            .cookie
+            .as_deref()
+            .map(str::trim)
+            .filter(|cookie| !cookie.is_empty() && !cookie.contains(['\r', '\n']))
+        {
+            headers.push(format!("Cookie: {cookie}"));
+        }
+        if !headers.is_empty() {
+            options.insert("header".into(), json!(headers));
+        }
+    }
+}
+
 pub async fn add_urls(
     shared: &Shared,
     urls: Vec<String>,
     start_paused: bool,
 ) -> Result<(), String> {
+    let downloads = urls.iter().map(|url| NewDownload::url(url)).collect();
+    add(shared, downloads, start_paused).await.map(|_| ())
+}
+
+/// Starts downloads and returns their IDs in order.
+pub async fn add(
+    shared: &Shared,
+    downloads: Vec<NewDownload>,
+    start_paused: bool,
+) -> Result<Vec<String>, String> {
     let rpc = shared.wait_rpc().await?;
     let settings = shared.settings.lock().unwrap().clone();
     let start = shared.tasks.lock().unwrap().next_added_at(now_ms());
     let mut new_tasks = Vec::new();
     let mut calls = Vec::new();
-    for (index, url) in urls
-        .iter()
-        .map(|url| url.trim())
-        .filter(|url| !url.is_empty())
+    for (index, download) in downloads
+        .into_iter()
+        .filter(|download| !download.url.trim().is_empty())
         .enumerate()
     {
+        let url = download.url.trim();
         let id = random_hex(8)?;
         // Offset by the index so a pasted list keeps its order.
         let mut task = Task::new(
@@ -484,24 +536,42 @@ pub async fn add_urls(
             String::new(),
             start + index as i64,
         );
+        if let Some(name) = download
+            .filename
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        {
+            task.row.name = name.to_string();
+        }
         task.row.category = settings.classify(&task.row.name);
-        task.row.dir = settings
-            .directory_for(&task.row.category)
-            .display()
-            .to_string();
+        if task.row.category == OTHER_CATEGORY {
+            // A name without an extension, such as a page title for a
+            // stream: the URL's type still counts (a playlist is a video).
+            task.row.category = settings.classify(&name_from_url(url));
+        }
+        task.row.dir = match download.dir.as_deref().filter(|dir| !dir.is_empty()) {
+            Some(dir) => dir.to_string(),
+            None => settings
+                .directory_for(&task.row.category)
+                .display()
+                .to_string(),
+        };
         if start_paused {
             task.row.status = TaskStatus::Paused;
         }
-        calls.push((
-            id,
-            json!([url]),
-            json!({ "gid": task.row.id, "dir": task.row.dir, "pause": start_paused.to_string() }),
-        ));
+        let mut options = serde_json::Map::new();
+        options.insert("gid".into(), json!(task.row.id));
+        options.insert("dir".into(), json!(task.row.dir));
+        options.insert("pause".into(), json!(start_paused.to_string()));
+        download.engine_options(&mut options);
+        calls.push((id, json!([url]), Value::Object(options)));
         new_tasks.push(task);
     }
     if new_tasks.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
+    let ids: Vec<String> = new_tasks.iter().map(|task| task.row.id.clone()).collect();
 
     // Show the rows right away; the engine fills in names and sizes.
     insert(shared, &new_tasks);
@@ -532,10 +602,10 @@ pub async fn add_urls(
     shared.wake.notify_one();
 
     if failed.is_empty() {
-        return Ok(());
+        return Ok(ids);
     }
-    let ids: Vec<String> = failed.iter().map(|(id, _)| id.clone()).collect();
-    forget(shared, &ids);
+    let failed_ids: Vec<String> = failed.iter().map(|(id, _)| id.clone()).collect();
+    forget(shared, &failed_ids);
     Err(match failed.len() {
         1 => format!("Could not add the download: {}", failed[0].1),
         count => format!("Could not add {count} downloads: {}", failed[0].1),

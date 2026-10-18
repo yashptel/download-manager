@@ -15,6 +15,15 @@ pub struct Settings {
     /// aria2 size syntax, e.g. "1M".
     pub min_split_size: String,
     pub categories: Vec<CategoryRule>,
+    /// Hand matching browser downloads to OpenDM.
+    pub browser_capture: bool,
+    /// Lowercase extensions, without the dot, that the browser hands over.
+    pub capture_extensions: Vec<String>,
+    /// Sites whose downloads stay in the browser; a name also covers its
+    /// subdomains.
+    pub capture_excluded_sites: Vec<String>,
+    /// Smaller files stay in the browser; 0 captures any size.
+    pub capture_min_size: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
@@ -39,14 +48,30 @@ impl Default for Settings {
             split: 8,
             min_split_size: "1M".into(),
             categories: default_categories(),
+            browser_capture: true,
+            capture_extensions: words(DEFAULT_CAPTURE_EXTENSIONS),
+            capture_excluded_sites: Vec::new(),
+            capture_min_size: 0,
         }
     }
+}
+
+/// Archives, programs, disk images, media and large documents. Pages,
+/// images and plain text stay in the browser, which shows them.
+const DEFAULT_CAPTURE_EXTENSIONS: &str = "zip rar 7z tar gz tgz bz2 xz zst lz lzma cab \
+    exe msi msix appx dmg pkg iso img deb rpm apk appimage bin \
+    mp4 mkv webm avi mov wmv flv m4v mpg mpeg 3gp m3u8 mpd \
+    mp3 m4a aac flac wav ogg opus wma aiff \
+    pdf doc docx xls xlsx ppt pptx odt ods odp epub";
+
+fn words(list: &str) -> Vec<String> {
+    list.split_whitespace().map(String::from).collect()
 }
 
 fn rule(name: &str, extensions: &str) -> CategoryRule {
     CategoryRule {
         name: name.into(),
-        extensions: extensions.split_whitespace().map(String::from).collect(),
+        extensions: words(extensions),
         folder: name.into(),
     }
 }

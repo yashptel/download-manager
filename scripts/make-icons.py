@@ -183,12 +183,16 @@ def main():
     mac = [mac_icon(n) for n in (16, 32, 64, 128, 256, 512, 1024)]
     mac[-1].save(ROOT / "apple" / "AppIcon.icns", append_images=mac[:-1])
 
+    extension = ROOT / "extension" / "icons"
+    extension.mkdir(parents=True, exist_ok=True)
+    for n in (16, 32, 48, 128):
+        app_icon(n).save(extension / f"icon-{n}.png")
+
     (ROOT / "docs" / "icon.svg").write_text(svg(), encoding="utf-8")
 
 
 if __name__ == "__main__":
     main()
-
 
 
 

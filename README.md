@@ -8,11 +8,14 @@ workflow and dialogs, with native UIs on each platform. OpenDM is a working name
 | `core/` | Rust core shared by both apps through UniFFI: aria2-next process supervision, JSON-RPC over WebSocket, task list, SQLite history, settings and file-type categories |
 | `apple/` | macOS app (Swift, AppKit) as a Swift package |
 | `windows/` | Windows app (C#, WinUI 3, unpackaged); see [windows/README.md](windows/README.md) |
+| `host/` | Native messaging host that relays between the browser extension and the running app, and the manifests that register it with browsers |
+| `extension/` | Browser extension for Chrome, Edge and Firefox; see [extension/README.md](extension/README.md) |
 | `vendor/aria2-next/` | Pinned engine version and checksums; binaries are downloaded, not committed |
 | `scripts/` | Build, engine fetch, icon and test-server scripts |
+| `tests/browser/` | Chrome and Firefox tests of the extension, host and app together |
 | `docs/` | Research notes, design decisions and the icon |
 
-The browser extension and the native messaging host come in later milestones;
+The Download File Info dialog, the progress window and the settings come next;
 see [docs/research.md](docs/research.md).
 
 The icon is drawn by `scripts/make-icons.py` (Python with Pillow), which writes
@@ -44,14 +47,20 @@ open -n --env OPENDM_DATA_DIR=/tmp/opendm-dev build/OpenDM.app
 ## Test
 
 ```sh
-cargo test -p opendm-core
+cargo test --workspace
 ```
 
 The `engine` integration test runs the real aria2-next binary (fetched by
 `scripts/fetch-engine.sh`). It kills the engine with SIGKILL in the middle
 of a download, checks that it restarts and the file completes byte-for-byte,
 that removing a download deletes its partial file, and that history survives
-reopening the core.
+reopening the core. The `browser` test connects to the app's socket the way
+the native host does, hands over a download and checks that the engine's
+request carries the browser's cookie, referer, user agent and file name.
+
+`tests/browser/run.sh` runs the extension in Google Chrome and Firefox
+against a local test site, the host and `build/OpenDM.app`; see
+[extension/README.md](extension/README.md).
 
 `scripts/test-server.py` serves throttled files with Range support, for
 trying the app with many live downloads.

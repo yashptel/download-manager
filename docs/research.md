@@ -70,8 +70,11 @@ app was not decompiled or disassembled.
 ## Milestones
 
 1. Rust core, engine lifecycle, macOS list UI (done).
-2. Windows app (WinUI 3, unpackaged) on the same core.
+2. Windows app (WinUI 3, unpackaged) on the same core (done).
 3. Browser extension (Chrome, Edge, Firefox; MV3) and native messaging host,
-   including HLS/DASH and direct media detection.
+   including HLS/DASH and direct media detection (done; tested in Chrome and
+   Firefox on macOS). The app answers "accepted" as soon as it has a download,
+   like Rayburst's early acknowledgement, so the browser never holds a
+   download while a dialog waits.
 4. Download File Info dialog, per-download progress window, the two toggles,
    General and Advanced settings, stream track picker.

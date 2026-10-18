@@ -24,10 +24,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.core = core
         store.load(from: core)
+        store.onBrowserDownloads = { [weak self] downloads, _ in
+            // Until the Download File Info dialog exists, start right away
+            // and show the list so the handoff is visible.
+            self?.core?.addDownloads(downloads: downloads, startPaused: false)
+            self?.mainWindow?.show()
+        }
         mainWindow = MainWindowController(store: store, core: core)
         statusItem = StatusItemController(store: store)
         core.start()
-        mainWindow?.show()
+        Self.installBrowserHost(core)
+        // The browser extension starts OpenDM with --background when it is not running.
+        if !CommandLine.arguments.contains("--background") {
+            mainWindow?.show()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -53,6 +63,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func resumeAll(_ sender: Any?) {
         core?.resumeAll()
+    }
+
+    /// Lets installed browsers start the bundled opendm-host, which connects
+    /// the extension to this app. Rewritten at each launch in case the app moved.
+    private static func installBrowserHost(_ core: DownloadCore) {
+        guard let host = Bundle.main.url(forAuxiliaryExecutable: "opendm-host")?.path else { return }
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                _ = try core.installBrowserHost(hostPath: host)
+            } catch {
+                NSLog("OpenDM: could not register the browser host: %@", error.localizedDescription)
+            }
+        }
     }
 
     /// Paths can be overridden with OPENDM_DATA_DIR and OPENDM_ENGINE for development.

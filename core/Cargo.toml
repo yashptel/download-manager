@@ -11,6 +11,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 [dependencies]
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 getrandom = "0.4"
+opendm-host = { path = "../host" }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

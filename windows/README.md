@@ -133,3 +133,23 @@ green, failed red, queued a tertiary gray. The macOS sources are
 - Light and dark mode, including switching while running.
 - Header alignment at 150%, and at 100% with the app forced to 96 DPI
   (`__COMPAT_LAYER=DPIUNAWARE`).
+
+## Browser extension (to check on Windows)
+
+Written on macOS and not yet built or run on Windows:
+
+- `opendm-host.exe` ships next to `OpenDM.exe`. At each launch the app writes
+  `%LOCALAPPDATA%\OpenDM\browser\org.opendm.host.json` (and a Firefox
+  variant) and, with `reg add`, points `NativeMessagingHosts\org.opendm.host`
+  at them under `HKCU\Software` for Chrome, Edge, Chromium, Brave, Vivaldi
+  and Mozilla. Check that the keys exist after a launch.
+- The app listens on a named pipe, `\\.\pipe\opendm-browser-<hash>`, where the
+  hash comes from the data folder, created with `reject_remote_clients`. The
+  host type-checks for Windows, and so does the pipe server in
+  `core/src/browser.rs` on its own; neither has run there.
+- With OpenDM closed, a captured download should start it with `--background`
+  (tray only, no window). The host asks to leave the browser's job object
+  (`CREATE_BREAKAWAY_FROM_JOB`), so closing the browser must not close OpenDM.
+- Load `extension/` unpacked in Chrome or Edge and run through the flows in
+  [extension/README.md](../extension/README.md); `tests/browser/` drives them on
+  macOS and needs its paths adapted for Windows.

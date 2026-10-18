@@ -5,7 +5,8 @@
 //! one the test is skipped.
 
 use opendm_core::{
-    CoreConfig, CoreListener, DownloadCore, EngineState, GlobalStats, TaskRow, TaskStatus,
+    BrowserSource, CoreConfig, CoreListener, DownloadCore, EngineState, GlobalStats, NewDownload,
+    TaskRow, TaskStatus,
 };
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -66,6 +67,7 @@ impl CoreListener for Recorder {
     fn error(&self, message: String) {
         self.errors.lock().unwrap().push(message);
     }
+    fn browser_downloads(&self, _downloads: Vec<NewDownload>, _source: BrowserSource) {}
 }
 
 /// Byte `i` of every served file.

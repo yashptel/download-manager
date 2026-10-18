@@ -1,0 +1,8 @@
+<!doctype html><title>Waiting</title><p>Waiting for the test…</p>
+<script>
+setInterval(async () => {
+  const answer = await fetch("/go.json?" + Date.now()).catch(() => null);
+  if (answer?.ok) location = (await answer.json()).url;
+}, 400);
+</script>
+

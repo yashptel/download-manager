@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Big Buck Test Video</title>
+<style>body { font: 15px system-ui; margin: 40px; } video { display: block; margin: 24px 0; background: #111; }</style>
+</head>
+<body>
+  <h1>OpenDM Connect test page</h1>
+  <p><a id="zip" href="/files/report.zip">Quarterly report (6 MB zip)</a></p>
+  <p><a href="/files/clip.webm">A clip</a> · <a href="/hls2/stream.m3u8">A stream</a></p>
+  <video id="video" src="/files/clip.webm" width="560" height="315" muted loop controls></video>
+  <script>
+    // Players fetch their playlists like this.
+    fetch("/hls2/stream.m3u8");
+    const auto = new URLSearchParams(location.search).get("auto");
+    const link = document.getElementById("zip");
+    if (auto === "zip") setTimeout(() => link.click(), 800);
+    if (auto === "alt") setTimeout(() => {
+      // What an Alt-click looks like to the content script, then the click.
+      link.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, altKey: true }));
+      link.click();
+    }, 800);
+  </script>
+</body>
+</html>
+
