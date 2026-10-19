@@ -45,14 +45,14 @@ a { color: inherit; text-decoration: none; }
 img { display: block; max-width: 100%; height: auto; }
 svg.i { width: 1.1em; height: 1.1em; flex: none; }
 .wrap { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 32px; }
-:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; border-radius: 4px; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .mono { font-family: var(--mono); font-feature-settings: normal; letter-spacing: 0; }
 .num { font-variant-numeric: tabular-nums; }
 
 /* Buttons */
 .btn {
   display: inline-flex; align-items: center; gap: 10px;
-  height: 48px; padding: 0 20px; border-radius: 10px; white-space: nowrap;
+  height: 48px; padding: 0 20px; border-radius: 0; white-space: nowrap;
   font: 500 16px/1 inherit; font-family: inherit;
   color: var(--ink); background: var(--paper); box-shadow: inset 0 0 0 1px var(--line);
   transition: background 0.15s, transform 0.15s;
@@ -61,7 +61,7 @@ svg.i { width: 1.1em; height: 1.1em; flex: none; }
 .btn:active { transform: translateY(1px); }
 .btn.primary { color: #fff; background: var(--ink); box-shadow: none; }
 .btn.primary:hover { background: #000; }
-.btn.small { height: 36px; padding: 0 14px; font-size: 14px; border-radius: 8px; }
+.btn.small { height: 36px; padding: 0 14px; font-size: 14px; border-radius: 0; }
 
 /* Header */
 .top { position: sticky; top: 0; z-index: 10;
@@ -80,11 +80,16 @@ svg.i { width: 1.1em; height: 1.1em; flex: none; }
    description and buttons side by side, then the real window. */
 .hero { padding: 72px 0 32px; }
 .hero h1 { margin: 0; max-width: 15ch; text-wrap: balance; font-size: clamp(46px, 7vw, 92px); line-height: 0.98; letter-spacing: -0.045em; font-weight: 600; }
-.hero .row { margin-top: 36px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 48px; align-items: start; }
-.hero .row p { margin: 0; max-width: 46ch; font-size: 19px; line-height: 1.5; color: var(--ink-2); }
-.hero .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.hero .shot { margin-top: 72px; }
-.window { border-radius: 12px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.05), 0 32px 64px -32px rgba(0, 0, 0, 0.3); }
+.hero .row { margin-top: 40px; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0 4px; align-items: start; }
+.hero .row p { grid-column: 1 / 5; margin: 0; padding-right: 24px; max-width: 46ch; font-size: 18px; line-height: 1.55; color: var(--ink-2); }
+.hero .actions { grid-column: 5 / 9; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.hero .get { display: grid; gap: 10px; }
+.hero .get .btn { height: 56px; justify-content: center; }
+.hero .get small { font-family: var(--mono); font-size: 13px; color: var(--ink-3); text-align: center; }
+/* Screenshots sit on square plates; the macOS window keeps its own corners. */
+.plate { background: var(--wash); display: flex; justify-content: center; align-items: center; }
+.hero .plate { margin-top: 72px; padding: 56px; }
+.window { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.08)) drop-shadow(0 16px 32px rgba(0, 0, 0, 0.08)); }
 
 /* The download bar. Eight segments, one per connection, as in the app's
    progress window. The hero one fills in on load; the others are stills. */
@@ -93,17 +98,16 @@ svg.i { width: 1.1em; height: 1.1em; flex: none; }
 .dl .head { color: var(--ink); margin-bottom: 10px; }
 .dl .foot { margin-top: 10px; }
 .dl .state { display: inline-flex; align-items: center; gap: 8px; color: var(--blue); }
-.dl .state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.dl .state::before { content: ""; width: 8px; height: 8px; background: currentColor; }
 .dl.done .state { color: var(--green); }
 .dl.paused .state { color: var(--orange); }
 .bar { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; height: 14px; }
-.bar i { display: block; background: var(--track); border-radius: 3px; overflow: hidden; }
-.bar i::before { content: ""; display: block; height: 100%; width: calc(var(--p, 0) * 1%); background: var(--blue); border-radius: inherit; }
+.bar i { display: block; background: var(--track); border-radius: 0; overflow: hidden; }
+.bar i::before { content: ""; display: block; height: 100%; width: calc(var(--p, 0) * 1%); background: var(--blue); }
 .dl.done .bar i::before { background: var(--green); }
 .dl.paused .bar i::before { background: var(--orange); }
 .hero .dl { font-size: 15px; }
 .hero .bar { height: 22px; gap: 4px; }
-.hero .bar i, .hero .bar i::before { border-radius: 5px; }
 @media (prefers-reduced-motion: no-preference) {
   .bar i::before { transition: width 0.1s linear; }
 }
@@ -114,7 +118,7 @@ h2 { margin: 0; max-width: 18ch; font-size: clamp(34px, 4.4vw, 54px); line-heigh
 .lede { margin: 18px 0 0; max-width: 52ch; font-size: 19px; color: var(--ink-2); }
 
 /* Extension: the browser screenshot wide. */
-.media { margin-top: 48px; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 32px 64px -32px rgba(0, 0, 0, 0.3); }
+.media { margin-top: 48px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 32px 64px -32px rgba(0, 0, 0, 0.3); }
 .under { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; color: var(--ink-2); font-size: 16px; }
 .browsers svg { display: inline-block; vertical-align: -0.17em; margin: 0 5px 0 3px; color: var(--ink); }
 .under a { color: var(--ink); font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
@@ -127,7 +131,8 @@ h2 { margin: 0; max-width: 18ch; font-size: clamp(34px, 4.4vw, 54px); line-heigh
 .rows h3 { margin: 0 0 10px; font-size: 26px; line-height: 1.15; letter-spacing: -0.025em; font-weight: 600; }
 .rows p { margin: 0; max-width: 38ch; color: var(--ink-2); }
 .rows .pic { justify-self: end; width: 100%; }
-.rows .pic img { margin-left: auto; border-radius: 10px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 24px 48px -28px rgba(0, 0, 0, 0.3); }
+.rows .pic.plate { padding: 40px; }
+.rows .pic img { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.08)) drop-shadow(0 16px 32px rgba(0, 0, 0, 0.08)); }
 .rows .pic.w-560 img { width: min(100%, 560px); }
 .rows .pic.w-360 img { width: min(100%, 360px); }
 /* A paused download, then two finished ones, drawn with the same bar. */
@@ -173,17 +178,19 @@ footer a:hover { color: var(--ink); }
 .prose a { color: var(--blue); }
 .prose a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .prose li { margin: 6px 0; }
-.prose code { font: 14px var(--mono); background: var(--wash); padding: 2px 6px; border-radius: 6px; color: var(--ink); }
+.prose code { font: 14px var(--mono); background: var(--wash); padding: 2px 6px; border-radius: 0; color: var(--ink); }
 .prose .updated { margin: 0 0 32px; color: var(--ink-3); }
 
 @media (max-width: 900px) {
   .top nav a.hide-sm { display: none; }
   .hero { padding: 48px 0 24px; }
-  .hero .row { grid-template-columns: 1fr; }
-  .hero .shot { margin-top: 48px; }
+  .hero .row { grid-template-columns: 1fr; gap: 28px; }
+  .hero .row p, .hero .actions { grid-column: 1; padding-right: 0; }
+  .hero .plate { margin-top: 48px; padding: 24px; }
+  .rows .pic.plate { padding: 24px; }
   section { padding: 80px 0; }
   .rows > div { grid-template-columns: 1fr; gap: 28px; padding: 44px 0; }
-  .rows .pic img, .folders { margin-left: 0; }
+  .folders { margin-left: 0; }
   .platform { grid-template-columns: auto minmax(0, 1fr); }
   .platform .get { grid-column: 1 / -1; grid-row: 3; justify-items: start; margin-top: 14px; }
 }
@@ -191,7 +198,7 @@ footer a:hover { color: var(--ink); }
   .wrap { padding: 0 20px; }
   .prose { padding: 48px 20px 32px; }
   .top nav { gap: 16px; }
-  .hero .actions .btn { width: 100%; justify-content: center; }
+  .hero .actions { grid-template-columns: 1fr; gap: 16px; }
   .hero .dl { font-size: 13px; }
   footer .grow { flex-basis: 100%; }
   .hero .bar { height: 16px; gap: 3px; }
