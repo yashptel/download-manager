@@ -5,7 +5,9 @@
 #   scripts/build-macos.sh               this Mac's architecture
 #   scripts/build-macos.sh --universal   arm64 + x86_64
 #
-# Set CODESIGN_IDENTITY to sign with a Developer ID; the default is ad hoc.
+# Set CODESIGN_IDENTITY to sign with a Developer ID, timestamped as
+# notarization requires; the default is ad hoc. scripts/package-macos.sh
+# makes the disk image and notarizes it.
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -78,7 +80,9 @@ cp vendor/aria2-next/bin/COPYING "$app/Contents/Resources/aria2-next-COPYING"
 sed "s/@VERSION@/$version/g" apple/Info.plist > "$app/Contents/Info.plist"
 
 identity=${CODESIGN_IDENTITY:--}
-codesign --force --options runtime --sign "$identity" "$app/Contents/MacOS/aria2-next"
-codesign --force --options runtime --sign "$identity" "$app/Contents/MacOS/opendm-host"
-codesign --force --options runtime --sign "$identity" "$app"
+timestamp=--timestamp
+[ "$identity" = "-" ] && timestamp=--timestamp=none
+codesign --force --options runtime $timestamp --sign "$identity" "$app/Contents/MacOS/aria2-next"
+codesign --force --options runtime $timestamp --sign "$identity" "$app/Contents/MacOS/opendm-host"
+codesign --force --options runtime $timestamp --sign "$identity" "$app"
 echo "$app"
