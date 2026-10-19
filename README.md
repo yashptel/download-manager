@@ -15,8 +15,17 @@ workflow and dialogs, with native UIs on each platform. OpenDM is a working name
 | `tests/browser/` | Chrome and Firefox tests of the extension, host and app together |
 | `docs/` | Research notes, design decisions and the icon |
 
-The Download File Info dialog, the progress window and the settings come next;
-see [docs/research.md](docs/research.md).
+Both apps have IDM's Download File Info dialog, progress windows, site
+logins, address refresh and full settings; see
+[docs/research.md](docs/research.md) for the design and
+[docs/releasing.md](docs/releasing.md) for installers, signing and updates.
+
+## Install
+
+Releases carry a Windows installer (`OpenDM-<version>-x64-setup.exe`, per
+user, no administrator rights), a macOS disk image and the OpenDM Connect
+browser extension. Until the extension is in the stores, load
+`extension/` unpacked; see [extension/README.md](extension/README.md).
 
 The icon is drawn by `scripts/make-icons.py` (Python with Pillow), which writes
 `docs/icon.svg`, the Windows app icon, title-bar PNGs and light/dark tray icons,

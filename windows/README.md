@@ -41,6 +41,22 @@ build\windows\OpenDM-x64\OpenDM.exe
 A `settings.json` in that folder with `{ "download_dir": "C:\\scratch\\downloads" }`
 keeps test downloads out of your Downloads folder.
 
+## Package
+
+```powershell
+scripts\package-windows.ps1     # build\windows\OpenDM-<version>-x64-setup.exe
+```
+
+Builds the app, then a per-user [Inno Setup](https://jrsoftware.org/isinfo.php)
+installer from `installer\OpenDM.iss` (`winget install JRSoftware.InnoSetup
+--scope user`): `%LOCALAPPDATA%\Programs\OpenDM`, a Start menu entry, no
+administrator rights. Setup stops a running OpenDM from the same folder
+before replacing it. The uninstaller removes the sign-in entry and the
+browser registrations that point at this installation, and keeps the
+history, settings and saved logins. With `OPENDM_SIGN_CERT` set, the
+binaries, setup and uninstaller are signed; see
+[docs/releasing.md](../docs/releasing.md).
+
 ## Test
 
 ```powershell
