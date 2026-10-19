@@ -77,4 +77,5 @@ app was not decompiled or disassembled.
    like Rayburst's early acknowledgement, so the browser never holds a
    download while a dialog waits.
 4. Download File Info dialog, per-download progress window, the two toggles,
-   General and Advanced settings, stream track picker.
+   General and Advanced settings, stream track picker (done on macOS and
+   Windows).
