@@ -3,120 +3,120 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenDM — the open-source download manager for Mac and Windows</title>
-  <meta name="description" content="Fast, resumable downloads with IDM-style browser capture and video downloads in the quality you choose. Free and open source for macOS and Windows.">
-  <meta name="theme-color" content="#0b1020">
+  <title>OpenDM: the open-source download manager for Mac and Windows</title>
+  <meta name="description" content="Fast, resumable downloads with browser capture, and videos in the quality you choose. Free and open source for macOS and Windows.">
   <link rel="icon" href="/assets/favicon.png">
   <link rel="canonical" href="https://opendm.squiwo.com/">
-  <meta property="og:title" content="OpenDM — the open-source download manager for Mac and Windows">
-  <meta property="og:description" content="Fast, resumable downloads with IDM-style browser capture and video downloads in the quality you choose. Free and open source for macOS and Windows.">
+  <link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <meta property="og:title" content="OpenDM: the open-source download manager for Mac and Windows">
+  <meta property="og:description" content="Fast, resumable downloads with browser capture, and videos in the quality you choose. Free and open source for macOS and Windows.">
   <meta property="og:image" content="https://opendm.squiwo.com/assets/og.png">
   <meta property="og:url" content="https://opendm.squiwo.com/">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="/style.css">
+  <script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
   <header class="top"><div class="wrap">
-    <a class="brand" href="/"><img src="/assets/icon.png" alt="">OpenDM</a>
+    <a class="brand" href="/"><img src="/assets/icon.png" alt="" width="30" height="30">OpenDM</a>
     <nav>
       <a class="hide-sm" href="/#features">Features</a>
-      <a class="hide-sm" href="/#extension">Browser extension</a>
-      <a href="/privacy">Privacy</a>
-      <a href="https://github.com/yashptel/download-manager">GitHub</a>
+      <a class="hide-sm" href="/#extension">Extension</a>
+      <a class="hide-sm" href="/privacy">Privacy</a>
+      <a class="gh" href="https://github.com/yashptel/download-manager" aria-label="OpenDM on GitHub"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M208.31,75.68A59.78,59.78,0,0,0,202.93,28,8,8,0,0,0,196,24a59.75,59.75,0,0,0-48,24H124A59.75,59.75,0,0,0,76,24a8,8,0,0,0-6.93,4,59.78,59.78,0,0,0-5.38,47.68A58.14,58.14,0,0,0,56,104v8a56.06,56.06,0,0,0,48.44,55.47A39.8,39.8,0,0,0,96,192v8H72a24,24,0,0,1-24-24A40,40,0,0,0,8,136a8,8,0,0,0,0,16,24,24,0,0,1,24,24,40,40,0,0,0,40,40H96v16a8,8,0,0,0,16,0V192a24,24,0,0,1,48,0v40a8,8,0,0,0,16,0V192a39.8,39.8,0,0,0-8.44-24.53A56.06,56.06,0,0,0,216,112v-8A58.14,58.14,0,0,0,208.31,75.68ZM200,112a40,40,0,0,1-40,40H112a40,40,0,0,1-40-40v-8a41.74,41.74,0,0,1,6.9-22.48A8,8,0,0,0,80,73.83a43.81,43.81,0,0,1,.79-33.58,43.88,43.88,0,0,1,32.32,20.06A8,8,0,0,0,119.82,64h32.35a8,8,0,0,0,6.74-3.69,43.87,43.87,0,0,1,32.32-20.06A43.81,43.81,0,0,1,192,73.83a8.09,8.09,0,0,0,1,7.65A41.72,41.72,0,0,1,200,104Z"/></svg></a>
+      <a class="btn primary small" href="/#download">Download</a>
     </nav>
   </div></header>
   <main>
-    <div class="wrap hero">
-      <img class="icon" src="/assets/icon.png" alt="">
-      <h1>Downloads, done properly.</h1>
-      <p class="lead">OpenDM takes over downloads from your browser and makes them fast, resumable and organized. Save videos in the quality you want. Free and open source for Mac and Windows.</p>
-      <div class="buttons">
-        <a class="btn primary" href="https://github.com/yashptel/download-manager/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.8-1.6 0-3.1 1-4 2.4-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.1-1.2 2.9-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.4-.9-2.4-3.9zM14 5.5c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4z"/></svg>Download for Mac</a>
-        <a class="btn" href="https://github.com/yashptel/download-manager/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.1 10.4 4v7.2H3zM11.3 3.9 21 2.5v8.7h-9.7zM3 12.1h7.4v7.2L3 18.2zM11.3 12.1H21v8.7l-9.7-1.4z"/></svg>Download for Windows</a>
+    <div class="hero"><div class="wrap">
+      <div class="copy">
+        <h1>Downloads, done properly.</h1>
+        <p>OpenDM takes your browser's downloads and makes them faster, resumable and tidy. Free and open source, Mac and Windows.</p>
+        <div class="actions"><a class="btn primary" href="https://github.com/yashptel/download-manager/releases/latest"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M223.3,169.59a8.07,8.07,0,0,0-2.8-3.4C203.53,154.53,200,134.64,200,120c0-17.67,13.47-33.06,21.5-40.67a8,8,0,0,0,0-11.62C208.82,55.74,187.82,48,168,48a72.2,72.2,0,0,0-40,12.13,71.56,71.56,0,0,0-90.71,9.09A74.63,74.63,0,0,0,16,123.4a127.06,127.06,0,0,0,40.14,89.73A39.8,39.8,0,0,0,83.59,224h87.68a39.84,39.84,0,0,0,29.12-12.57,125,125,0,0,0,17.82-24.6C225.23,174,224.33,172,223.3,169.59Zm-34.63,30.94a23.76,23.76,0,0,1-17.4,7.47H83.59a23.82,23.82,0,0,1-16.44-6.51A111.14,111.14,0,0,1,32,123,58.5,58.5,0,0,1,48.65,80.47,54.81,54.81,0,0,1,88,64h.78A55.45,55.45,0,0,1,123,76.28a8,8,0,0,0,10,0A55.44,55.44,0,0,1,168,64a70.64,70.64,0,0,1,36,10.35c-13,14.52-20,30.47-20,45.65,0,23.77,7.64,42.73,22.18,55.3A105.82,105.82,0,0,1,188.67,200.53ZM128.23,30A40,40,0,0,1,167,0h1a8,8,0,0,1,0,16h-1a24,24,0,0,0-23.24,18,8,8,0,1,1-15.5-4Z"/></svg>Download for Mac</a><a class="btn" href="https://github.com/yashptel/download-manager/releases/latest"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M208,136H128a8,8,0,0,0-8,8v57.45a8,8,0,0,0,6.57,7.88l80,14.54A7.61,7.61,0,0,0,208,224a8,8,0,0,0,8-8V144A8,8,0,0,0,208,136Zm-8,70.41-64-11.63V152h64ZM96,136H32a8,8,0,0,0-8,8v40a8,8,0,0,0,6.57,7.87l64,11.64a8.54,8.54,0,0,0,1.43.13,8,8,0,0,0,8-8V144A8,8,0,0,0,96,136Zm-8,50.05-48-8.73V152H88ZM213.13,33.86a8,8,0,0,0-6.56-1.73l-80,14.55A8,8,0,0,0,120,54.55V112a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V40A8,8,0,0,0,213.13,33.86ZM200,104H136V61.22l64-11.63ZM101.13,54.22a8,8,0,0,0-6.56-1.73l-64,11.64A8,8,0,0,0,24,72v40a8,8,0,0,0,8,8H96a8,8,0,0,0,8-8V60.36A8,8,0,0,0,101.13,54.22ZM88,104H40V78.68L88,70Z"/></svg>Download for Windows</a></div>
       </div>
-      <p class="note">macOS 13 or later · Windows 10 and 11 (x64 and ARM64)</p>
-      <img class="shot-main" src="/assets/main.webp" width="1600" height="1055" alt="The OpenDM window with downloads in progress, paused and finished, sorted into categories">
-    </div>
-
-    <section id="features"><div class="wrap">
-      <div class="split">
-        <div class="text">
-          <p class="eyebrow">Fast and reliable</p>
-          <h2>Every file over several connections at once</h2>
-          <p class="sub">OpenDM splits each download into parts and fetches them in parallel, so large files finish sooner. Pause any time; downloads pick up where they left off, even after a restart.</p>
-          <ul>
-            <li><span><b>Resumes anything.</b> Network drops and reboots don't cost you the part you already have.</span></li>
-            <li><span><b>Retries on its own.</b> A download that fails partway tries again by itself.</span></li>
-            <li><span><b>Fresh links.</b> When a link expires, open the page again and OpenDM carries on with the new address.</span></li>
-          </ul>
-        </div>
-        <img src="/assets/progress.webp" width="800" height="589" alt="The progress window: speed, time left, connections and a map of the parts downloaded so far">
-      </div>
-    </div></section>
-
-    <section><div class="wrap">
-      <div class="split reverse">
-        <div class="text">
-          <p class="eyebrow">You decide where it goes</p>
-          <h2>Name it and file it before it starts</h2>
-          <p class="sub">Each new download asks for its name and folder, and it is already under way while you decide. Files sort themselves into Video, Music, Documents, Programs and Compressed.</p>
-          <ul>
-            <li><span><b>Start now or later.</b> Queue downloads for the night with the scheduler.</span></li>
-            <li><span><b>Quiet when you want.</b> Turn off the dialog and the progress window, each on its own.</span></li>
-          </ul>
-        </div>
-        <img src="/assets/fileinfo.webp" width="900" height="589" alt="The Download File Info dialog with name, category, folder and address">
-      </div>
-    </div></section>
+      <img class="shot window" src="/assets/main.webp" width="2000" height="1250" fetchpriority="high"
+        alt="The OpenDM window: two downloads in progress, one paused and several finished, sorted into categories in the sidebar">
+    </div></div>
 
     <section id="extension"><div class="wrap">
-      <div class="split">
-        <div class="text">
-          <p class="eyebrow">OpenDM Connect</p>
-          <h2>Video in the quality you want</h2>
-          <p class="sub">The browser extension hands your downloads to OpenDM with the cookies they need, so files behind a sign-in work too. Hover a video to pick a resolution, or save just the audio.</p>
-          <ul>
-            <li><span><b>Streams too.</b> Finds HLS and DASH streams as well as plain video files.</span></li>
-            <li><span><b>Right-click to send.</b> A link, an image, a selection, or every link on the page.</span></li>
-            <li><span><b>Alt-click to skip.</b> Keep a single download in the browser.</span></li>
-          </ul>
-          <div class="buttons" style="justify-content:flex-start;margin-top:28px">
-            <a class="btn" href="/support#extension">Get the extension</a>
-          </div>
+      <h2 class="reveal">Save the video in the quality you want</h2>
+      <p class="lede reveal" style="--i:1">Hover a video and OpenDM Connect lists every resolution it finds, plus the audio on its own. Streaming video works too.</p>
+      <div class="media reveal" style="--i:2"><img src="/assets/video-menu.webp" width="1470" height="893" loading="lazy"
+        alt="The Download video menu over a playing video, offering 2160p down to 480p and an English audio track"></div>
+      <div class="under"><span>Works in Chrome, Edge and Firefox.</span><a href="/support#extension">Get the extension <svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg></a></div>
+    </div></section>
+
+    <section id="features"><div class="wrap">
+      <h2 class="reveal">Everything a download manager should do</h2>
+      <div class="bento">
+        <div class="tile t-a reveal">
+          <h3>Many connections per file</h3>
+          <p>Each download is split into parts that arrive in parallel. The progress window shows every part filling in.</p>
+          <div class="pic"><img src="/assets/progress.webp" width="900" height="724" loading="lazy" alt="The progress window with speed, time left, eight connections and a map of finished parts"></div>
         </div>
-        <img class="frame" src="/assets/video-menu.webp" width="980" height="595" alt="The Download video menu over a video, listing qualities from 2160p to 480p and the audio track">
+        <div class="tile t-b reveal" style="--i:1">
+          <h3>Picks up where it stopped</h3>
+          <p>Network drops, sleep and restarts keep what you already have. A download that fails partway tries again by itself.</p>
+          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></svg>
+        </div>
+        <div class="tile t-d reveal" style="--i:2">
+          <h3>Sorted as it lands</h3>
+          <p>Each file goes to a folder for its kind. Rename them, add your own, or turn sorting off.</p>
+          <ul><li>Video</li><li>Music</li><li>Documents</li><li>Programs</li><li>Compressed</li></ul>
+        </div>
+        <div class="tile t-c reveal">
+          <h3>Name it before it starts</h3>
+          <p>Choose the file name and folder while the download is already under way.</p>
+          <div class="pic"><img src="/assets/fileinfo.webp" width="960" height="555" loading="lazy" alt="The Download File Info dialog with name, category, folder and address"></div>
+        </div>
+        <div class="tile t-e reveal" style="--i:1">
+          <h3>Settings when you need them</h3>
+          <p>Speed limits, a scheduler, proxies, saved site logins and engine options. None of it is required.</p>
+          <div class="pic"><img src="/assets/settings.webp" width="760" height="861" loading="lazy" alt="OpenDM's General settings"></div>
+        </div>
       </div>
     </div></section>
 
-    <section><div class="wrap">
-      <p class="eyebrow">And the rest</p>
-      <h2>Everything a download manager should do</h2>
-      <div class="grid">
-        <div class="card"><h3>Speed limits</h3><p>Cap all downloads together or each one, so browsing stays quick.</p></div>
-        <div class="card"><h3>Scheduler</h3><p>Start waiting downloads at night and pause them again in the morning.</p></div>
-        <div class="card"><h3>Site logins</h3><p>Saved per site in your keychain, asked for when a server wants one.</p></div>
-        <div class="card"><h3>Proxies</h3><p>Uses your browser's proxy, or one you set.</p></div>
-        <div class="card"><h3>Menu bar and tray</h3><p>Keeps running in the background, ready for the next download. Opens at login if you like.</p></div>
-        <div class="card"><h3>Power-user settings</h3><p>Connections, part size, retries, headers and any engine option you need.</p></div>
+    <section class="statement"><div class="wrap">
+      <p class="big reveal">No account, no analytics, no servers of ours. <span>The extension talks only to the app on your computer.</span></p>
+      <div class="links reveal" style="--i:1">
+        <a href="/privacy">Read the privacy policy <svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></svg></a>
+        <a href="https://github.com/yashptel/download-manager">Browse the source on GitHub <svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M200,64V168a8,8,0,0,1-16,0V83.31L69.66,197.66a8,8,0,0,1-11.32-11.32L172.69,72H88a8,8,0,0,1,0-16H192A8,8,0,0,1,200,64Z"/></svg></a>
       </div>
+    </div></section>
 
-      <div class="cta">
-        <h2>Free, open source, no tracking</h2>
-        <p>No account, no ads and no analytics. The extension talks only to the app on your own computer.</p>
-        <div class="buttons">
-          <a class="btn" href="https://github.com/yashptel/download-manager/releases/latest">Download OpenDM</a>
-          <a class="btn ghost" href="https://github.com/yashptel/download-manager">View on GitHub</a>
+    <section id="download"><div class="wrap">
+      <h2 class="reveal">Get OpenDM</h2>
+      <div class="platforms">
+        <div class="platform reveal">
+          <svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M223.3,169.59a8.07,8.07,0,0,0-2.8-3.4C203.53,154.53,200,134.64,200,120c0-17.67,13.47-33.06,21.5-40.67a8,8,0,0,0,0-11.62C208.82,55.74,187.82,48,168,48a72.2,72.2,0,0,0-40,12.13,71.56,71.56,0,0,0-90.71,9.09A74.63,74.63,0,0,0,16,123.4a127.06,127.06,0,0,0,40.14,89.73A39.8,39.8,0,0,0,83.59,224h87.68a39.84,39.84,0,0,0,29.12-12.57,125,125,0,0,0,17.82-24.6C225.23,174,224.33,172,223.3,169.59Zm-34.63,30.94a23.76,23.76,0,0,1-17.4,7.47H83.59a23.82,23.82,0,0,1-16.44-6.51A111.14,111.14,0,0,1,32,123,58.5,58.5,0,0,1,48.65,80.47,54.81,54.81,0,0,1,88,64h.78A55.45,55.45,0,0,1,123,76.28a8,8,0,0,0,10,0A55.44,55.44,0,0,1,168,64a70.64,70.64,0,0,1,36,10.35c-13,14.52-20,30.47-20,45.65,0,23.77,7.64,42.73,22.18,55.3A105.82,105.82,0,0,1,188.67,200.53ZM128.23,30A40,40,0,0,1,167,0h1a8,8,0,0,1,0,16h-1a24,24,0,0,0-23.24,18,8,8,0,1,1-15.5-4Z"/></svg>
+          <h3>macOS</h3>
+          <p>macOS 13 or later, Apple silicon and Intel</p>
+          <a class="btn primary" href="https://github.com/yashptel/download-manager/releases/latest"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M223.3,169.59a8.07,8.07,0,0,0-2.8-3.4C203.53,154.53,200,134.64,200,120c0-17.67,13.47-33.06,21.5-40.67a8,8,0,0,0,0-11.62C208.82,55.74,187.82,48,168,48a72.2,72.2,0,0,0-40,12.13,71.56,71.56,0,0,0-90.71,9.09A74.63,74.63,0,0,0,16,123.4a127.06,127.06,0,0,0,40.14,89.73A39.8,39.8,0,0,0,83.59,224h87.68a39.84,39.84,0,0,0,29.12-12.57,125,125,0,0,0,17.82-24.6C225.23,174,224.33,172,223.3,169.59Zm-34.63,30.94a23.76,23.76,0,0,1-17.4,7.47H83.59a23.82,23.82,0,0,1-16.44-6.51A111.14,111.14,0,0,1,32,123,58.5,58.5,0,0,1,48.65,80.47,54.81,54.81,0,0,1,88,64h.78A55.45,55.45,0,0,1,123,76.28a8,8,0,0,0,10,0A55.44,55.44,0,0,1,168,64a70.64,70.64,0,0,1,36,10.35c-13,14.52-20,30.47-20,45.65,0,23.77,7.64,42.73,22.18,55.3A105.82,105.82,0,0,1,188.67,200.53ZM128.23,30A40,40,0,0,1,167,0h1a8,8,0,0,1,0,16h-1a24,24,0,0,0-23.24,18,8,8,0,1,1-15.5-4Z"/></svg>Download for Mac</a>
+        </div>
+        <div class="platform reveal" style="--i:1">
+          <svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M208,136H128a8,8,0,0,0-8,8v57.45a8,8,0,0,0,6.57,7.88l80,14.54A7.61,7.61,0,0,0,208,224a8,8,0,0,0,8-8V144A8,8,0,0,0,208,136Zm-8,70.41-64-11.63V152h64ZM96,136H32a8,8,0,0,0-8,8v40a8,8,0,0,0,6.57,7.87l64,11.64a8.54,8.54,0,0,0,1.43.13,8,8,0,0,0,8-8V144A8,8,0,0,0,96,136Zm-8,50.05-48-8.73V152H88ZM213.13,33.86a8,8,0,0,0-6.56-1.73l-80,14.55A8,8,0,0,0,120,54.55V112a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V40A8,8,0,0,0,213.13,33.86ZM200,104H136V61.22l64-11.63ZM101.13,54.22a8,8,0,0,0-6.56-1.73l-64,11.64A8,8,0,0,0,24,72v40a8,8,0,0,0,8,8H96a8,8,0,0,0,8-8V60.36A8,8,0,0,0,101.13,54.22ZM88,104H40V78.68L88,70Z"/></svg>
+          <h3>Windows</h3>
+          <p>Windows 10 and 11, x64 and ARM64</p>
+          <a class="btn primary" href="https://github.com/yashptel/download-manager/releases/latest"><svg class="i" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M208,136H128a8,8,0,0,0-8,8v57.45a8,8,0,0,0,6.57,7.88l80,14.54A7.61,7.61,0,0,0,208,224a8,8,0,0,0,8-8V144A8,8,0,0,0,208,136Zm-8,70.41-64-11.63V152h64ZM96,136H32a8,8,0,0,0-8,8v40a8,8,0,0,0,6.57,7.87l64,11.64a8.54,8.54,0,0,0,1.43.13,8,8,0,0,0,8-8V144A8,8,0,0,0,96,136Zm-8,50.05-48-8.73V152H88ZM213.13,33.86a8,8,0,0,0-6.56-1.73l-80,14.55A8,8,0,0,0,120,54.55V112a8,8,0,0,0,8,8h80a8,8,0,0,0,8-8V40A8,8,0,0,0,213.13,33.86ZM200,104H136V61.22l64-11.63ZM101.13,54.22a8,8,0,0,0-6.56-1.73l-64,11.64A8,8,0,0,0,24,72v40a8,8,0,0,0,8,8H96a8,8,0,0,0,8-8V60.36A8,8,0,0,0,101.13,54.22ZM88,104H40V78.68L88,70Z"/></svg>Download for Windows</a>
         </div>
       </div>
+      <p class="after reveal">Then add OpenDM Connect to your browser. <a href="/support#extension">Get the extension</a></p>
     </div></section>
   </main>
   <footer><div class="wrap">
-    <span>© 2026 OpenDM · Free and open source under the MIT license</span>
-    <span class="spacer"></span>
+    <span class="grow">© 2026 OpenDM. Free and open source under the MIT license.</span>
     <a href="/privacy">Privacy</a>
     <a href="/support">Support</a>
     <a href="https://github.com/yashptel/download-manager">Source</a>
     <a href="https://github.com/yashptel/download-manager/releases">Releases</a>
   </div></footer>
+  <script>
+  // Sections rise in once as they reach the viewport.
+  const seen = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); seen.unobserve(e.target); }
+  }, { rootMargin: "0px 0px -12% 0px" });
+  document.querySelectorAll(".reveal").forEach((el) => seen.observe(el));
+</script>
 </body>
 </html>
