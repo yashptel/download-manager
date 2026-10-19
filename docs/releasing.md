@@ -11,8 +11,9 @@ Windows installer, the macOS disk image and the browser extension package.
    bump it when the extension changed.
 2. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
 3. The [Release workflow](../.github/workflows/release.yml) builds
-   `OpenDM-<version>-x64-setup.exe`, `OpenDM-<version>.dmg` and
-   `opendm-connect-<version>.zip` and attaches them to a draft release.
+   `OpenDM-<version>-x64-setup.exe`, `OpenDM-<version>-arm64-setup.exe`,
+   `OpenDM-<version>.dmg` and `opendm-connect-<version>.zip` and attaches them
+   to a draft release.
 4. Try the installer and the disk image, edit the notes, and publish the
    draft. Running the workflow by hand from the Actions tab builds the same
    files without a release.
@@ -21,6 +22,7 @@ The same files build locally:
 
 ```sh
 scripts/package-windows.ps1     # build\windows\OpenDM-<version>-x64-setup.exe
+scripts/package-windows.ps1 -Arch arm64   # needs MSVC's ARM64 build tools
 scripts/package-macos.sh        # build/OpenDM-<version>.dmg
 python3 scripts/package-extension.py   # build/extension/opendm-connect-<version>.zip
 ```
