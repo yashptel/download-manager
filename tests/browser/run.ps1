@@ -1,10 +1,10 @@
-# Browser test for OpenDM Connect on Windows: Google Chrome (or the browser
-# in $env:CHROME, such as Edge) loads the unpacked extension, which hands
-# downloads to build\windows\OpenDM-x64 through the native host. Run
-# scripts\build-windows.ps1 first. Needs Chrome, ffmpeg, Python 3 and Node 22
-# or later. Uses $env:OPENDM_E2E_DIR (default %TEMP%\opendm-e2e) for the test
-# site, browser profile and downloads. The test starts OpenDM through the
-# host, so it quits a running copy first.
+# Browser tests for OpenDM Connect on Windows: Google Chrome (or the browser
+# in $env:CHROME, such as Edge) and then Firefox, when installed, load the
+# unpacked extension, which hands downloads to build\windows\OpenDM-x64
+# through the native host. Run scripts\build-windows.ps1 first. Needs Chrome,
+# ffmpeg, Python 3 and Node 22 or later. Uses $env:OPENDM_E2E_DIR (default
+# %TEMP%\opendm-e2e) for the test site, browser profiles and downloads. Each
+# test starts OpenDM through the host, so a running copy is quit first.
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 if (-not $env:OPENDM_E2E_DIR) { $env:OPENDM_E2E_DIR = Join-Path $env:TEMP 'opendm-e2e' }
@@ -51,6 +51,13 @@ try {
     Start-Sleep 1
     node "$here\chrome.mjs"
     $failed = $LASTEXITCODE
+    $firefox = if ($env:FIREFOX) { $env:FIREFOX } else { 'C:\Program Files\Mozilla Firefox\firefox.exe' }
+    if (Test-Path $firefox) {
+        Stop-Process -Name OpenDM -ErrorAction SilentlyContinue
+        Start-Sleep 2
+        node "$here\firefox.mjs"
+        if ($LASTEXITCODE -ne 0) { $failed = $LASTEXITCODE }
+    }
 } finally {
     Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
     Stop-Process -Name OpenDM -ErrorAction SilentlyContinue

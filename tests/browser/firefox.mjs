@@ -1,13 +1,18 @@
-// Firefox check, launched through LaunchServices (helpers started from a
-// sandboxed shell cannot sandbox themselves). The add-on is installed as a
-// temporary add-on over Firefox's remote debugging protocol.
-import { execFileSync } from "node:child_process";
+// Firefox check. On macOS Firefox is launched through LaunchServices (helpers
+// started from a sandboxed shell cannot sandbox themselves); on Windows it is
+// started directly. The add-on is installed as a temporary add-on over
+// Firefox's remote debugging protocol.
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
 
-const REPO = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
-const ROOT = process.env.OPENDM_E2E_DIR ?? "/tmp/opendm-e2e", RUN = ROOT + "/ff-" + Date.now();
+const WINDOWS = process.platform === "win32";
+const FIREFOX = process.env.FIREFOX ?? "C:/Program Files/Mozilla Firefox/firefox.exe";
+const REPO = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const ROOT = process.env.OPENDM_E2E_DIR ?? path.join(os.tmpdir(), "opendm-e2e"), RUN = ROOT + "/ff-" + Date.now();
 const DATA = RUN + "/data", APP_DL = RUN + "/dl", BROWSER_DL = RUN + "/browser-dl", PROFILE = RUN + "/profile";
 const PORT = 6125;
 for (const dir of [DATA, APP_DL, BROWSER_DL, PROFILE]) fs.mkdirSync(dir, { recursive: true });
@@ -15,15 +20,31 @@ fs.writeFileSync(DATA + "/settings.json", JSON.stringify({ download_dir: APP_DL,
 fs.rmSync(ROOT + "/site/go.json", { force: true });
 const prefs = {
   "devtools.debugger.remote-enabled": true, "devtools.chrome.enabled": true, "devtools.debugger.prompt-connection": false,
-  "browser.download.folderList": 2, "browser.download.dir": BROWSER_DL, "browser.download.useDownloadDir": true,
+  "browser.download.folderList": 2, "browser.download.dir": path.resolve(BROWSER_DL), "browser.download.useDownloadDir": true,
   "browser.download.alwaysOpenPanel": false, "browser.shell.checkDefaultBrowser": false,
   "browser.aboutwelcome.enabled": false, "datareporting.policy.dataSubmissionPolicyBypassNotification": true,
   "browser.startup.homepage_override.mstone": "ignore",
 };
 fs.writeFileSync(PROFILE + "/user.js", Object.entries(prefs).map(([k, v]) => "user_pref(" + JSON.stringify(k) + ", " + JSON.stringify(v) + ");").join("\n"));
 const started = Date.now() / 1000;
-execFileSync("/usr/bin/open", ["-n", "-a", "/Applications/Firefox.app", "--env", "OPENDM_DATA_DIR=" + DATA, "--args",
-  "-no-remote", "-profile", PROFILE, "--start-debugger-server", String(PORT), "http://127.0.0.1:8770/wait.html"]);
+const firefoxArgs = ["-no-remote", "-profile", path.resolve(PROFILE), "--start-debugger-server", String(PORT), "http://127.0.0.1:8770/wait.html"];
+let firefox;
+if (WINDOWS) {
+  // Firefox on Windows finds native hosts in the registry only; the app
+  // writes the same key at every launch.
+  const manifest = path.resolve(RUN, "org.opendm.host.firefox.json");
+  fs.writeFileSync(manifest, JSON.stringify({
+    name: "org.opendm.host", description: "OpenDM", type: "stdio",
+    path: path.join(REPO, "build/windows/OpenDM-x64/opendm-host.exe"),
+    allowed_extensions: ["connect@opendm.org"],
+  }));
+  execFileSync("reg", ["add", "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\org.opendm.host", "/ve", "/d", manifest, "/f"], { stdio: "ignore" });
+  // Without -wait-for-browser the launcher exits at once and the browser it
+  // starts outlives taskkill, keeping the debugger port for the next run.
+  firefox = spawn(FIREFOX, ["-wait-for-browser", ...firefoxArgs], { env: { ...process.env, OPENDM_DATA_DIR: DATA }, stdio: "ignore" });
+} else {
+  execFileSync("/usr/bin/open", ["-n", "-a", "/Applications/Firefox.app", "--env", "OPENDM_DATA_DIR=" + DATA, "--args", ...firefoxArgs]);
+}
 
 /** Minimal remote debugging protocol client: messages are "length:json". */
 async function rdp() {
@@ -69,13 +90,14 @@ async function rdp() {
 
 const results = [];
 const check = (name, ok, detail) => { results.push(ok); console.log((ok ? "PASS " : "FAIL ") + name + (detail ? " — " + detail : "")); };
-const files = (dir) => fs.readdirSync(dir, { recursive: true }).map(String).filter((f) => f.includes("."));
+const files = (dir) => fs.readdirSync(dir, { recursive: true }).map((f) => String(f).replaceAll("\\", "/")).filter((f) => f.includes("."));
+// Newer Firefox removes a temporary add-on when the connection that installed it closes.
+let client;
 try {
-  const client = await rdp();
+  client = await rdp();
   const root = await client.ask({ to: "root", type: "getRoot" });
-  const installed = await client.ask({ to: root.addonsActor, type: "installTemporaryAddon", addonPath: REPO + "/extension" });
+  const installed = await client.ask({ to: root.addonsActor, type: "installTemporaryAddon", addonPath: path.join(REPO, "extension") });
   check("Firefox installs the add-on", installed.addon?.id === "connect@opendm.org", installed.addon?.id ?? JSON.stringify(installed));
-  client.close();
   await new Promise((r) => setTimeout(r, 1500));
   fs.writeFileSync(ROOT + "/site/go.json", JSON.stringify({ url: "http://127.0.0.1:8770/index.html?auto=zip&firefox=1" }));
 
@@ -99,7 +121,11 @@ try {
 } catch (error) {
   check("test ran to the end", false, error.message);
 } finally {
+  client?.close();
   fs.rmSync(ROOT + "/site/go.json", { force: true });
-  try { execFileSync("/usr/bin/pkill", ["-f", PROFILE]); } catch {}
+  try {
+    if (WINDOWS) execFileSync("taskkill", ["/F", "/T", "/PID", String(firefox.pid)], { stdio: "ignore" });
+    else execFileSync("/usr/bin/pkill", ["-f", PROFILE]);
+  } catch {}
 }
 process.exit(results.every(Boolean) ? 0 : 1);
