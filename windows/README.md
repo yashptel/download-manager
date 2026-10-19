@@ -75,7 +75,21 @@ text, which resets the list, one of 70-90 ms. Scrolling 3 rows per frame,
 
 Rechecked after the dialogs, Settings and the tray's status line were added
 (the tray counts queued and paused rows on every update): 60 live rows per
-update, median 0.77 ms and p95 0.96 ms on the UI thread with 5,001 rows.
+update, median 0.77 ms and p95 0.96 ms on the UI thread with 5,001 rows and
+no live row on screen.
+
+With the three list styles, 60 live downloads and the live rows at the top
+of the list (the same window, 150%):
+
+| Style | Live rows on screen | Median | p95 |
+| --- | --- | --- | --- |
+| Cards | about 6 | 2.2 ms | 8.0 ms |
+| List | about 12 | 4.7 ms | 11.2 ms |
+| Columns | about 15 | 7.8 ms | 16 ms |
+
+The build before the styles measured 10.7 ms median for Columns in the same
+setup, so the styles cost nothing in layout; working out every displayed
+value of a row once per update adds about 0.9 ms per 60 rows.
 
 What made the list fast, in case it regresses:
 
@@ -108,24 +122,23 @@ What made the list fast, in case it regresses:
 | `AddressWindow.xaml(.cs)` | Refresh download address |
 | `Format.cs`, `Native.cs` | Formatting, links, Win32 helpers |
 
-## List styles (to port from macOS)
+## List styles
 
-The macOS app lets the user pick one of three list designs; the choice is
-remembered and List is the default. The Windows app currently has only the
-Columns table. Add the other two as alternative item templates on the same
-virtualized list, switched by a three-way toggle in the toolbar and
-Ctrl+1 / Ctrl+2 / Ctrl+3, saved in local settings:
+As on macOS, the list shows Cards, List (the default) or Columns, chosen with
+View in the toolbar or Ctrl+1 to Ctrl+3 and kept in
+`HKCU\Software\OpenDM\ListStyle`. They are three item templates and item
+styles on the same virtualized ListView, in `MainWindow.xaml`.
 
-| Style | Row height | Contents |
+| Style | Row | Contents |
 | --- | --- | --- |
-| Cards | 104 | Card with a 10 px corner radius, inset 10 px from the sides and 4 px top and bottom, 1 px separator border. 36 px file icon; semibold name; status line in the status color with its symbol, plus speed and time left while downloading (failed rows show the error); full-width 5 px bar; "40% · 82 MB / 209 MB". A pill of Pause/Resume/Retry/Open, Show in folder, Copy address and Remove buttons at the top right. Selection is an accent outline. |
-| List | 54 | 32 px icon; name; a 4 px bar only while unfinished; detail line such as "82 MB of 209.7 MB · 258 KB/s · 8 min left", in red with the error for failed rows. Two fixed button slots at the trailing edge: pause/resume/retry, and show in folder (finished rows, or on hover). |
-| Columns | 26 | The existing table. Status shows a colored symbol and a short word ("Failed", with the error as a tooltip); progress, speed and time left only while they mean something. |
+| Cards | 96 px card | File icon, name, status line in the status color (with speed and time left while downloading, or the error), a bar across the card, "40% · 82 MB / 209 MB", and Pause/Resume/Retry/Open, Show in folder, Copy address and Remove in a pill. The selection fills the card. |
+| List | 56 px | File icon, name, a bar while unfinished, a detail line ("82 MB of 209 MB · 258 KB/s · 8 min left", the error in red), and two button slots: pause/resume/retry and show in folder. |
+| Columns | 36 px | The table with sortable headers; status is a colored symbol and one word, with a failed download's error as its tooltip. |
 
-Status colors: downloading uses the accent color, paused orange, completed
-green, failed red, queued a tertiary gray. The macOS sources are
-`apple/Sources/OpenDM/RowCells.swift` (Cards and List) and `Cells.swift`
-(Columns). Recheck the 5,000-row test in each style.
+Sort in the toolbar sorts by date added or any column, either way, and
+follows the headers. Status colors (`Looks.cs`): the accent while
+downloading, gray while queued, orange when paused, green when complete,
+red when failed; rows look them up again when the theme changes.
 
 ## Behavior checked on Windows 11
 
@@ -135,7 +148,8 @@ green, failed red, queued a tertiary gray. The macOS sources are
   when they would change nothing), Settings… and Exit; left click shows the
   window. Efficiency mode stays off on purpose (`ForceCreate(false)`); it
   would throttle downloads.
-- Single instance: a second launch exits and shows the running window.
+- Single instance: a second launch exits and shows the running window. A copy
+  with its own `OPENDM_DATA_DIR` runs beside it.
 - Closing hides the window; Exit stops the engine within 2 s and leaves no
   `aria2-next.exe`. Killing the app also ends the engine
   (`--stop-with-process`).
@@ -143,9 +157,12 @@ green, failed red, queued a tertiary gray. The macOS sources are
   new engine and the downloads continue.
 - Space pauses or resumes the selected rows; the selection survives live
   updates and re-sorting.
-- Light and dark mode, including switching while running.
+- Light and dark mode, including switching while running, for the main
+  window in every list style, Download File Info, the progress window and
+  Settings.
 - Header alignment at 150%, and at 100% with the app forced to 96 DPI
-  (`__COMPAT_LAYER=DPIUNAWARE`).
+  (`__COMPAT_LAYER=DPIUNAWARE`); the list styles, Download File Info and
+  Settings lay out the same at 100%.
 - New Download, dropped links and browser downloads go through Download File
   Info (one link) or the several-files list, which follow the running
   download for its name and size; with confirmation off they start at once.
@@ -181,4 +198,5 @@ green, failed red, queued a tertiary gray. The macOS sources are
   Download all links and the proxy hand-off: 25 of 25 pass in Chrome and in
   Edge (`$env:CHROME` = msedge.exe). It quits a running OpenDM first, and
   leaves the native-host registry keys pointing at its temporary profile
-  until OpenDM next starts. The Firefox test still runs on macOS only.
+  until OpenDM next starts. Then, when Firefox is installed, `firefox.mjs`
+  checks a captured download there: 8 of 8 pass in Firefox 158.
