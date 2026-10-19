@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 /// While a window shows progress, often enough that the numbers count up
 /// as the bytes arrive; the engine's speed is already averaged over seconds.
-const VISIBLE_INTERVAL: Duration = Duration::from_millis(100);
+const VISIBLE_INTERVAL: Duration = Duration::from_millis(250);
 const BACKGROUND_INTERVAL: Duration = Duration::from_secs(2);
 /// Waits before a failed download is tried again on its own; the last one
 /// repeats. The engine has already retried each connection a few times, so
