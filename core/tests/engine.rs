@@ -187,6 +187,15 @@ fn row(core: &DownloadCore, id: &str) -> Option<TaskRow> {
     core.rows().into_iter().find(|row| row.id == id)
 }
 
+/// Bytes the engine has recorded as on disk for a download it can resume.
+/// Writes still in flight when it fails are not among them.
+fn recorded(data: &Path, id: &str) -> u64 {
+    let db = rusqlite::Connection::open(data.join("engine/state/stream/state.db")).unwrap();
+    let bytes: i64 =
+        db.query_row("SELECT completed_length FROM downloads WHERE gid = ?1", [id], |row| row.get(0)).unwrap();
+    bytes as u64
+}
+
 fn open(
     engine: &Path,
     data: &Path,
@@ -395,13 +404,20 @@ fn a_download_that_failed_partway_continues_into_a_correct_file() {
     });
     let failed = row(&core, &id).unwrap();
     assert!(failed.done_bytes > 0 && failed.done_bytes < FILE_SIZE, "{failed:?}");
+    let kept = recorded(&temp.path().join("data"), &id);
+    assert!(kept > 0);
 
     // The server recovers; Retry must not take the untouched parts as done.
     FLAKY.store(false, Ordering::SeqCst);
     core.resume(vec![id.clone()]);
+    // Nor drop the parts that were done, gaps and all.
+    let mut least = u64::MAX;
     wait_until("completion after the retry", Duration::from_secs(60), || {
-        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Complete)
+        let row = row(&core, &id).unwrap();
+        least = least.min(row.done_bytes);
+        row.status == TaskStatus::Complete
     });
+    assert!(least >= kept, "went back from {kept} to {least} bytes");
     let path = PathBuf::from(row(&core, &id).unwrap().path.unwrap());
     let bytes = std::fs::read(&path).unwrap();
     assert_eq!(bytes.len() as u64, FILE_SIZE);
@@ -444,14 +460,20 @@ fn an_expired_download_continues_from_a_new_address() {
         row(&core, &id).is_some_and(|row| row.status == TaskStatus::Failed)
     });
     assert!(row(&core, &id).unwrap().done_bytes > 0);
+    let kept = recorded(&temp.path().join("data"), &id);
+    assert!(kept > 0);
 
     assert_eq!(core.wait_for_address(id.clone()).unwrap(), Some(page));
     core.stop_waiting_for_address();
     let fresh = format!("http://127.0.0.1:{port}/files/movie.bin?token=new");
     core.refresh_address(id.clone(), NewDownload { url: fresh.clone(), ..NewDownload::default() });
+    let mut least = u64::MAX;
     wait_until("completion at the new address", Duration::from_secs(60), || {
-        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Complete)
+        let Some(row) = row(&core, &id) else { return false };
+        least = least.min(row.done_bytes);
+        row.status == TaskStatus::Complete
     });
+    assert!(least >= kept, "went back from {kept} to {least} bytes");
     let done = row(&core, &id).unwrap();
     assert_eq!(done.url, fresh);
     assert_eq!(done.name, "movie.bin");

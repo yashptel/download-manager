@@ -1041,7 +1041,8 @@ pub async fn resume(shared: &Shared, ids: Vec<String>) -> Result<(), String> {
                 rpc.call("aria2.retryMedia", vec![id]).await
             } else {
                 let options = readd_options(&rpc, task).await;
-                restart(shared, &rpc, task, &task.row.url, options).await
+                let progress = saved_progress(shared, &task.row.id);
+                restart(shared, &rpc, task, &task.row.url, options, progress).await
             }
         };
         if let Err(error) = result {
@@ -1102,28 +1103,39 @@ async fn readd_options(rpc: &Rpc, task: &Task) -> serde_json::Map<String, Value>
     options
 }
 
-/// Starts a failed download again under its own GID, from `url`.
+/// Starts a stopped download again under its own GID, from `url`, keeping
+/// every part already on disk.
 ///
-/// The engine sizes the file in full when it starts and keeps which parts
-/// are done in its own state, which dropping the failed task discards. Re-
-/// added over a full-length file, it would take the untouched parts as done
-/// and call a partial file complete. So the file is first cut to the part
-/// known to be done from its start, and the download continues from there.
+/// The engine sizes the file in full when it starts and keeps which ranges
+/// are done in its resume record, which dropping the old task deletes. So
+/// the record taken before is put back, and the new task resumes from it.
+/// Without a record, a full-length file would pass for done, so it starts
+/// over instead.
 async fn restart(
     shared: &Shared,
     rpc: &Rpc,
     task: &Task,
     url: &str,
     options: serde_json::Map<String, Value>,
+    progress: Option<Progress>,
 ) -> Result<Value, String> {
-    let done = done_from_start(shared, &task.row.id);
     let _ = rpc.call("aria2.removeDownloadResult", vec![json!(task.row.id)]).await;
-    for file in &task.files {
-        let longer = std::fs::metadata(file).is_ok_and(|meta| meta.len() > done);
-        if longer {
-            let cut = std::fs::OpenOptions::new().write(true).open(file).and_then(|file| file.set_len(done));
-            if let Err(error) = cut {
-                return Err(format!("Could not prepare {file} to continue: {error}"));
+    let kept = progress.is_some_and(|mut progress| {
+        if url != task.row.url {
+            // The old address's validators say nothing about the new one; its
+            // first answer sets them. The length is still compared.
+            progress.etag.clear();
+            progress.last_modified.clear();
+        }
+        progress.put_back(shared, &task.row.id, url).is_ok()
+    });
+    if !kept {
+        for file in &task.files {
+            if std::fs::metadata(file).is_ok_and(|meta| meta.len() > 0) {
+                let cut = std::fs::OpenOptions::new().write(true).open(file).and_then(|file| file.set_len(0));
+                if let Err(error) = cut {
+                    return Err(format!("Could not prepare {file} to start over: {error}"));
+                }
             }
         }
     }
@@ -1131,24 +1143,63 @@ async fn restart(
         .await
 }
 
-/// Bytes of a download done without a gap from its start, as the engine's
-/// resume state has them ("0-98304,1585152-1683456"); 0 when unknown.
-fn done_from_start(shared: &Shared, id: &str) -> u64 {
-    let path = crate::engine::engine_dir(shared).join("state/stream/state.db");
-    let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
-    let ranges: Option<String> = rusqlite::Connection::open_with_flags(path, flags)
-        .and_then(|db| {
-            db.query_row("SELECT completed_ranges FROM downloads WHERE gid = ?1", [id], |row| row.get(0))
-        })
-        .ok();
-    ranges.as_deref().map_or(0, prefix_length)
+/// A download's resume record in the engine's state: its file, the server's
+/// validators, and the byte ranges on disk ("0-98304,1585152-1683456").
+struct Progress {
+    path: String,
+    etag: String,
+    last_modified: String,
+    total_length: i64,
+    completed_length: i64,
+    completed_ranges: String,
 }
 
-fn prefix_length(ranges: &str) -> u64 {
-    let first = ranges.split(',').next().unwrap_or("");
-    match first.split_once('-') {
-        Some(("0", end)) => end.trim().parse().unwrap_or(0),
-        _ => 0,
+fn state_db(shared: &Shared) -> std::path::PathBuf {
+    crate::engine::engine_dir(shared).join("state/stream/state.db")
+}
+
+/// The engine's resume record of a download, when it has one.
+fn saved_progress(shared: &Shared, id: &str) -> Option<Progress> {
+    let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let db = rusqlite::Connection::open_with_flags(state_db(shared), flags).ok()?;
+    db.query_row(
+        "SELECT path, etag, last_modified, total_length, completed_length, completed_ranges
+         FROM downloads WHERE gid = ?1",
+        [id],
+        |row| {
+            Ok(Progress {
+                path: row.get(0)?,
+                etag: row.get(1)?,
+                last_modified: row.get(2)?,
+                total_length: row.get(3)?,
+                completed_length: row.get(4)?,
+                completed_ranges: row.get(5)?,
+            })
+        },
+    )
+    .ok()
+}
+
+impl Progress {
+    fn put_back(&self, shared: &Shared, id: &str, url: &str) -> rusqlite::Result<()> {
+        let db = rusqlite::Connection::open_with_flags(state_db(shared), rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        db.busy_timeout(Duration::from_secs(2))?;
+        db.execute(
+            "INSERT OR REPLACE INTO downloads
+             (gid, uri, path, etag, last_modified, total_length, completed_length, completed_ranges)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                id,
+                url,
+                self.path,
+                self.etag,
+                self.last_modified,
+                self.total_length,
+                self.completed_length,
+                self.completed_ranges
+            ],
+        )?;
+        Ok(())
     }
 }
 
@@ -1192,7 +1243,8 @@ async fn retry_with_fresh_cookies(shared: &Shared, task: &Task) -> bool {
     headers.retain(|line| !is_cookie(line));
     headers.push(json!(fresh));
     options.insert("header".into(), Value::Array(headers));
-    let restarted = restart(shared, &rpc, task, &task.row.url, options).await.is_ok();
+    let progress = saved_progress(shared, &task.row.id);
+    let restarted = restart(shared, &rpc, task, &task.row.url, options, progress).await.is_ok();
     if restarted {
         finish_action(shared, &rpc, std::slice::from_ref(task)).await;
     }
@@ -1230,6 +1282,8 @@ pub async fn refresh_address(shared: &Shared, id: &str, download: &NewDownload) 
     // would otherwise leave the list.
     shared.tasks.lock().unwrap().removing.insert(id.to_string());
     let result = async {
+        // Read before a running download is removed: removing deletes it.
+        let progress = saved_progress(shared, id);
         if matches!(task.row.status, TaskStatus::Downloading | TaskStatus::Queued | TaskStatus::Paused) {
             let _ = rpc.call("aria2.forceRemove", vec![json!(id)]).await;
             for _ in 0..60 {
@@ -1252,7 +1306,7 @@ pub async fn refresh_address(shared: &Shared, id: &str, download: &NewDownload) 
             fresh.insert("header".into(), Value::Array(custom.into_iter().chain(own).collect()));
         }
         options.extend(fresh);
-        restart(shared, &rpc, &task, download.url.trim(), options).await
+        restart(shared, &rpc, &task, download.url.trim(), options, progress).await
     }
     .await;
     let updated = {
@@ -1288,7 +1342,8 @@ pub async fn set_login(shared: &Shared, id: &str, user: &str, password: &str) ->
     let mut options = readd_options(&rpc, &task).await;
     options.insert("http-user".into(), json!(user));
     options.insert("http-passwd".into(), json!(password));
-    restart(shared, &rpc, &task, &task.row.url, options).await?;
+    let progress = saved_progress(shared, &task.row.id);
+    restart(shared, &rpc, &task, &task.row.url, options, progress).await?;
     finish_action(shared, &rpc, std::slice::from_ref(&task)).await;
     Ok(())
 }
