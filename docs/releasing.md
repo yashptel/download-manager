@@ -63,9 +63,9 @@ exported needs the signing service's own step instead.
 disk image; `NOTARY_PROFILE` (a profile saved with `xcrun notarytool
 store-credentials`) or `NOTARY_KEY`, `NOTARY_KEY_ID` and `NOTARY_ISSUER`
 (an App Store Connect API key) notarize the image and staple the ticket. The
-workflow reads them from the `MACOS_CERTIFICATE` (base64 .p12),
-`MACOS_CERTIFICATE_PASSWORD`, `MACOS_SIGN_IDENTITY`, `NOTARY_KEY` (base64
-.p8), `NOTARY_KEY_ID` and `NOTARY_ISSUER` secrets.
+workflow reads them from the `APPLE_DEVELOPER_ID_P12_BASE64` (base64 .p12),
+`APPLE_DEVELOPER_ID_P12_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY_P8`
+(the .p8 text, or base64), `APPLE_API_KEY_ID` and `APPLE_API_ISSUER` secrets.
 
 ## The browser extension
 

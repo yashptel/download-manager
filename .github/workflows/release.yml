@@ -6,11 +6,13 @@
 # Signing is optional and comes from repository secrets:
 #   WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD
 #       a code-signing certificate as a base64 .pfx and its password
-#   MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD, MACOS_SIGN_IDENTITY
+#   APPLE_DEVELOPER_ID_P12_BASE64, APPLE_DEVELOPER_ID_P12_PASSWORD,
+#   APPLE_SIGNING_IDENTITY
 #       a Developer ID Application certificate as a base64 .p12, its
 #       password and its name ("Developer ID Application: …")
-#   NOTARY_KEY, NOTARY_KEY_ID, NOTARY_ISSUER
-#       an App Store Connect API key as a base64 .p8, its ID and issuer
+#   APPLE_API_KEY_P8, APPLE_API_KEY_ID, APPLE_API_ISSUER
+#       an App Store Connect API key (the .p8 text, or it in base64), its ID
+#       and its issuer ID, for notarization
 name: Release
 
 on:
@@ -76,8 +78,8 @@ jobs:
   macos:
     runs-on: macos-latest
     env:
-      HAS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE != '' }}
-      HAS_NOTARY_KEY: ${{ secrets.NOTARY_KEY != '' }}
+      HAS_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 != '' }}
+      HAS_NOTARY_KEY: ${{ secrets.APPLE_API_KEY_P8 != '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/cache@v6
@@ -92,33 +94,48 @@ jobs:
       - name: Import the signing certificate
         if: env.HAS_CERTIFICATE == 'true'
         env:
-          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           keychain="$RUNNER_TEMP/signing.keychain-db"
           security create-keychain -p "" "$keychain"
           security set-keychain-settings -lut 3600 "$keychain"
           security unlock-keychain -p "" "$keychain"
-          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          printf '%s' "$CERTIFICATE" | tr -d ' \r\n' | base64 --decode > "$RUNNER_TEMP/signing.p12"
           security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$PASSWORD" -T /usr/bin/codesign
           rm "$RUNNER_TEMP/signing.p12"
           security set-key-partition-list -S apple-tool:,apple: -k "" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$keychain"
           echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
       - name: Prepare notarization
         if: env.HAS_NOTARY_KEY == 'true'
         env:
-          KEY: ${{ secrets.NOTARY_KEY }}
-          KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-          ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          KEY: ${{ secrets.APPLE_API_KEY_P8 }}
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          echo "$KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          # The key as pasted from the .p8 file, or that file in base64.
+          case "$KEY" in
+            *"BEGIN PRIVATE KEY"*) printf '%s\n' "$KEY" > "$RUNNER_TEMP/notary.p8" ;;
+            *) printf '%s' "$KEY" | tr -d ' \r\n' | base64 --decode > "$RUNNER_TEMP/notary.p8" ;;
+          esac
           echo "NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
           echo "NOTARY_KEY_ID=$KEY_ID" >> "$GITHUB_ENV"
           echo "NOTARY_ISSUER=$ISSUER" >> "$GITHUB_ENV"
       - name: Build the disk image
         run: scripts/package-macos.sh
+      - name: Check the signature and notarization
+        if: env.HAS_CERTIFICATE == 'true'
+        run: |
+          dmg=$(ls build/OpenDM-*.dmg)
+          codesign --verify --deep --strict --verbose=2 build/OpenDM.app
+          codesign -dv --verbose=2 build/OpenDM.app 2>&1 | grep -E 'Authority|TeamIdentifier|Runtime'
+          if [ "$HAS_NOTARY_KEY" = true ]; then
+            xcrun stapler validate "$dmg"
+            spctl -a -vv -t open --context context:primary-signature "$dmg"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: macos
@@ -152,4 +169,3 @@ jobs:
         run: >
           gh release create "$GITHUB_REF_NAME" dist/*
           --repo "$GITHUB_REPOSITORY" --draft --generate-notes --title "OpenDM ${GITHUB_REF_NAME#v}"
-
