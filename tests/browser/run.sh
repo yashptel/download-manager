@@ -28,6 +28,9 @@ cat > "$site/hls/master.m3u8" <<'EOF'
 EOF
 # The player's API answer names the playlist only inside escaped JSON.
 printf '{"title":"Big Buck Test Video","sources":{"hls":"http:\\/\\/127.0.0.1:8770\\/hls\\/master.m3u8?token=t1"}}' > "$site/api/video.json"
+# A second video's playlist, one quality, named only in a player's markup.
+mkdir -p "$site/hls2"
+printf '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360,CODECS="avc1.64001e,mp4a.40.2"\n../hls/360/stream.m3u8\n' > "$site/hls2/master.m3u8"
 : > "$OPENDM_E2E_DIR/requests.log"
 
 python3 "$here/server.py" 8770 &

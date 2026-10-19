@@ -8,8 +8,9 @@
   <p><a id="zip" href="/files/report.zip">Quarterly report (6 MB zip)</a></p>
   <p><a href="/files/clip.webm">A clip</a></p>
   <video id="video" src="/files/clip.webm" width="560" height="315" muted loop controls></video>
-  <!-- A player built as a web component keeps its video in a shadow root (Reddit). -->
-  <shadow-player id="shadow-player"></shadow-player>
+  <!-- A player built as a web component keeps its video in a shadow root and
+       names its own playlist in its markup (Reddit). -->
+  <shadow-player id="shadow-player" src="/hls2/master.m3u8?f=sd"></shadow-player>
   <script>
     customElements.define("shadow-player", class extends HTMLElement {
       connectedCallback() {

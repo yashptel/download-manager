@@ -246,8 +246,7 @@ try {
   if (file) await page.click(file.x, file.y);
   const clip = await until("the clip", 20000, async () => listFiles(APP_DL).find((f) => f.endsWith(".webm")));
   check("the menu's file entry sends the video to OpenDM", Boolean(clip), clip);
-  await page.click(main.x, main.y); // Closes the menu.
-  await sleep(300);
+  await sleep(1600); // The button's "Sent to OpenDM" flash ignores clicks.
 
   // 6b. The button also appears over a video inside a player's shadow root.
   await page.evaluate("document.getElementById('shadow-player').scrollIntoView()");
@@ -256,6 +255,17 @@ try {
   await sleep(400);
   const overShadow = await page.evaluate("(() => { const host = document.querySelector('opendm-connect'); const r = host.getBoundingClientRect(); const p = document.getElementById('shadow-player').getBoundingClientRect(); return getComputedStyle(host).display === 'block' && r.top >= p.top && r.bottom <= p.bottom; })()");
   check("video button appears over a video in a shadow root", overShadow === true, String(overShadow));
+  // Its menu is for its own video, not the page's other stream.
+  const [shadowMain] = await page.find("main");
+  await page.click(shadowMain.x, shadowMain.y);
+  const ownOptions = await until("the shadow player's menu", 15000, async () => {
+    const found = await page.find("option");
+    return found.length && found;
+  });
+  const ownLabels = (ownOptions || []).map((o) => o.text);
+  check("the menu is for the hovered player's own stream", ownLabels.some((t) => t.startsWith("360p")) && !ownLabels.some((t) => t.startsWith("720p")), ownLabels.join(" | "));
+  await page.click(shadowMain.x, shadowMain.y);
+  await sleep(300);
 
   // 7. "Download all links" hands over every link on the page.
   const links = await sw.evaluate(
