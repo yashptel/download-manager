@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.Win32;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
 using Windows.UI.Core;
@@ -32,7 +33,10 @@ internal abstract record ListFilter
     };
 }
 
-internal enum SortColumn { Name, Size, Progress, Speed, Eta, Status }
+internal enum SortColumn { Added, Name, Size, Progress, Speed, Eta, Status }
+
+/// <summary>The user's choice of list design, as on macOS; Ctrl+1 to Ctrl+3.</summary>
+internal enum ListStyle { Cards, List, Columns }
 
 /// <summary>
 /// Main window: category sidebar, toolbar and the download list. Progress
@@ -42,6 +46,13 @@ internal enum SortColumn { Name, Size, Progress, Speed, Eta, Status }
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    private const string PreferencesKey = @"Software\OpenDM";
+    private static readonly (SortColumn Column, string Title)[] SortTitles =
+    [
+        (SortColumn.Added, "Date added"), (SortColumn.Name, "Name"), (SortColumn.Size, "Size"), (SortColumn.Progress, "Progress"),
+        (SortColumn.Speed, "Speed"), (SortColumn.Eta, "Time left"), (SortColumn.Status, "Status"),
+    ];
+
     private readonly DownloadStore store;
     private readonly DownloadCore core;
     private readonly DownloadList visible = new();
@@ -86,6 +97,18 @@ public sealed partial class MainWindow : Window
             [SortColumn.Status] = (StatusHeader, "Status"),
         };
         BuildNavigation(core.Settings().Categories.Select(rule => rule.Name).Append("Other"));
+        BuildSortMenu();
+        BuildViewMenu();
+        ApplyStyle(Registry.CurrentUser.OpenSubKey(PreferencesKey)?.GetValue("ListStyle") is string saved
+            && Enum.TryParse<ListStyle>(saved, out var savedStyle) ? savedStyle : ListStyle.List);
+        // Status colors come from the theme; rows look them up again when it changes.
+        Root.ActualThemeChanged += (_, _) =>
+        {
+            foreach (var item in store.Items)
+            {
+                item.RefreshLooks();
+            }
+        };
         Table.ItemsSource = visible;
         store.LayoutRoot = Root;
 
@@ -256,6 +279,7 @@ public sealed partial class MainWindow : Window
     /// <summary>What a column sorts by; speed as displayed, so equal-looking speeds tie.</summary>
     private static (double Number, string? Text) SortKey(TaskRow row, SortColumn column) => column switch
     {
+        SortColumn.Added => (row.AddedAt, null),
         SortColumn.Name => (0, row.Name),
         SortColumn.Size => (row.TotalBytes, null),
         SortColumn.Progress => (row.Progress, null),
@@ -313,22 +337,83 @@ public sealed partial class MainWindow : Window
     private void Header_Click(object sender, RoutedEventArgs e)
     {
         var column = Enum.Parse<SortColumn>((string)((Button)sender).Tag);
-        if (sortColumn == column)
-        {
-            sortAscending = !sortAscending;
-        }
-        else
-        {
-            sortColumn = column;
-            sortAscending = column == SortColumn.Name;
-        }
+        SetSort(column, sortColumn == column ? !sortAscending : column == SortColumn.Name);
+    }
+
+    /// <summary>Sorts the list; the column headers and the Sort menu show the choice.</summary>
+    private void SetSort(SortColumn column, bool ascending)
+    {
+        sortColumn = column;
+        sortAscending = ascending;
         foreach (var (key, (button, title)) in headers)
         {
             button.Content = key == column ? SortedHeader(title, sortAscending) : title;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button,
                 key == column ? $"{title}, sorted {(sortAscending ? "ascending" : "descending")}" : title);
         }
+        foreach (var item in SortMenu.Items.OfType<RadioMenuFlyoutItem>())
+        {
+            item.IsChecked = item.Tag switch
+            {
+                SortColumn tagged => tagged == column,
+                bool up => up == ascending,
+                _ => false,
+            };
+        }
         Rebuild();
+    }
+
+    /// <summary>Sorting without the Columns headers: by any column or the date added, either way.</summary>
+    private void BuildSortMenu()
+    {
+        foreach (var (column, title) in SortTitles)
+        {
+            var item = new RadioMenuFlyoutItem { Text = title, GroupName = "SortColumn", Tag = column, IsChecked = column == SortColumn.Added };
+            item.Click += (_, _) => SetSort(column, column == sortColumn ? sortAscending : column == SortColumn.Name);
+            SortMenu.Items.Add(item);
+        }
+        SortMenu.Items.Add(new MenuFlyoutSeparator());
+        foreach (var (ascending, title) in new[] { (true, "Ascending"), (false, "Descending") })
+        {
+            var item = new RadioMenuFlyoutItem { Text = title, GroupName = "SortDirection", Tag = ascending, IsChecked = ascending };
+            item.Click += (_, _) => SetSort(sortColumn ?? SortColumn.Added, ascending);
+            SortMenu.Items.Add(item);
+        }
+    }
+
+    private void BuildViewMenu()
+    {
+        foreach (var (choice, key) in new[] { (ListStyle.Cards, "1"), (ListStyle.List, "2"), (ListStyle.Columns, "3") })
+        {
+            var item = new RadioMenuFlyoutItem { Text = choice.ToString(), GroupName = "ListStyle", Tag = choice, KeyboardAcceleratorTextOverride = "Ctrl+" + key };
+            item.Click += (_, _) => ApplyStyle(choice);
+            ViewMenu.Items.Add(item);
+        }
+    }
+
+    private void Style_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        ApplyStyle(sender.Key switch
+        {
+            VirtualKey.Number1 => ListStyle.Cards,
+            VirtualKey.Number2 => ListStyle.List,
+            _ => ListStyle.Columns,
+        });
+        args.Handled = true;
+    }
+
+    /// <summary>Shows the rows as cards, a list or a table, and remembers the choice.</summary>
+    private void ApplyStyle(ListStyle chosen)
+    {
+        Table.ItemContainerStyle = (Style)Root.Resources[$"{chosen}ItemStyle"];
+        Table.ItemTemplate = (DataTemplate)Root.Resources[$"{chosen}Template"];
+        ColumnHeaders.Visibility = chosen == ListStyle.Columns ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var item in ViewMenu.Items.OfType<RadioMenuFlyoutItem>())
+        {
+            item.IsChecked = (ListStyle)item.Tag == chosen;
+        }
+        using var key = Registry.CurrentUser.CreateSubKey(PreferencesKey);
+        key.SetValue("ListStyle", chosen.ToString());
     }
 
     /// <summary>
@@ -489,6 +574,22 @@ public sealed partial class MainWindow : Window
             Open([item.Row]);
         }
     }
+
+    // Buttons inside rows act on their own row.
+
+    private static TaskRow RowOf(object sender) => ((DownloadItem)((FrameworkElement)sender).DataContext).Row;
+
+    private void RowPrimary_Click(object sender, RoutedEventArgs e)
+    {
+        var row = RowOf(sender);
+        if (CanPause(row)) Pause([row]);
+        else if (row.Status == TaskStatus.Complete) Open([row]);
+        else Resume([row]);
+    }
+
+    private void RowReveal_Click(object sender, RoutedEventArgs e) => Reveal([RowOf(sender)]);
+    private void RowCopy_Click(object sender, RoutedEventArgs e) => CopyAddresses([RowOf(sender)]);
+    private void RowRemove_Click(object sender, RoutedEventArgs e) => _ = Remove([RowOf(sender)], false);
 
     private void Table_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
     {

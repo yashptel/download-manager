@@ -9,6 +9,33 @@ namespace OpenDM;
 /// </summary>
 public sealed class DownloadItem : INotifyPropertyChanged
 {
+    /// <summary>Every value a row style shows, compared before and after an update.</summary>
+    private static readonly (string Name, Func<DownloadItem, object?> Value)[] Shown =
+    [
+        (nameof(Name), item => item.Name),
+        (nameof(Glyph), item => item.Glyph),
+        (nameof(SizeText), item => item.SizeText),
+        (nameof(Fraction), item => item.Fraction),
+        (nameof(IsIndeterminate), item => item.IsIndeterminate),
+        (nameof(IsDeterminate), item => item.IsDeterminate),
+        (nameof(PercentText), item => item.PercentText),
+        (nameof(SpeedText), item => item.SpeedText),
+        (nameof(EtaText), item => item.EtaText),
+        (nameof(Status), item => item.Status),
+        (nameof(StatusTitle), item => item.StatusTitle),
+        (nameof(Error), item => item.Error),
+        (nameof(IsPaused), item => item.IsPaused),
+        (nameof(IsFailed), item => item.IsFailed),
+        (nameof(IsRunningOrDone), item => item.IsRunningOrDone),
+        (nameof(DetailText), item => item.DetailText),
+        (nameof(CardStatusText), item => item.CardStatusText),
+        (nameof(CardAmountText), item => item.CardAmountText),
+        (nameof(CardFraction), item => item.CardFraction),
+        (nameof(PrimaryGlyph), item => item.PrimaryGlyph),
+        (nameof(PrimaryLabel), item => item.PrimaryLabel),
+        (nameof(IsUnfinished), item => item.IsUnfinished),
+    ];
+
     internal DownloadItem(TaskRow row)
     {
         Row = row;
@@ -31,35 +58,53 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public string PercentText => IsDeterminate ? Format.Percent(Row) : "";
     public string SpeedText => Format.Speed(Row.Speed);
     public string EtaText => Format.Eta(Row.EtaSecs);
-    public string StatusText => Format.Status(Row);
+    internal TaskStatus Status => Row.Status;
+    public string StatusTitle => Format.Title(Row.Status);
+    public string? Error => Row.Status == TaskStatus.Failed ? Row.Error : null;
     public bool IsPaused => Row.Status == TaskStatus.Paused;
     public bool IsFailed => Row.Status == TaskStatus.Failed;
-    public bool IsNotFailed => !IsFailed;
     public bool IsRunningOrDone => !IsPaused && !IsFailed;
+    public string DetailText => Format.Detail(Row);
+    public string CardStatusText => Format.CardStatus(Row);
+    public string CardAmountText => Format.CardAmount(Row);
+    /// <summary>A card's bar is always there; full once complete.</summary>
+    public double CardFraction => Row.Status == TaskStatus.Complete ? 1 : Fraction;
+    public bool IsUnfinished => Row.Status != TaskStatus.Complete;
+
+    /// <summary>The row's main button: pause, resume, retry or open.</summary>
+    public string PrimaryGlyph => Row.Status switch
+    {
+        TaskStatus.Downloading or TaskStatus.Queued => "\uE769",
+        TaskStatus.Paused => "\uE768",
+        TaskStatus.Failed => "\uE72C",
+        _ => "\uE8A7",
+    };
+
+    public string PrimaryLabel => Row.Status switch
+    {
+        TaskStatus.Downloading or TaskStatus.Queued => "Pause",
+        TaskStatus.Paused => "Resume",
+        TaskStatus.Failed => "Retry",
+        _ => "Open",
+    };
 
     internal void Update(TaskRow row)
     {
-        var (name, glyph, size, fraction, indeterminate, determinate, percent) = (Name, Glyph, SizeText, Fraction, IsIndeterminate, IsDeterminate, PercentText);
-        var (speed, eta, status, paused, failed) = (SpeedText, EtaText, StatusText, IsPaused, IsFailed);
-        Row = row;
-        if (Name != name) Raise(nameof(Name));
-        if (Glyph != glyph) Raise(nameof(Glyph));
-        if (SizeText != size) Raise(nameof(SizeText));
-        if (Fraction != fraction) Raise(nameof(Fraction));
-        if (IsIndeterminate != indeterminate) Raise(nameof(IsIndeterminate));
-        if (IsDeterminate != determinate) Raise(nameof(IsDeterminate));
-        if (PercentText != percent) Raise(nameof(PercentText));
-        if (SpeedText != speed) Raise(nameof(SpeedText));
-        if (EtaText != eta) Raise(nameof(EtaText));
-        if (StatusText != status) Raise(nameof(StatusText));
-        if (IsPaused != paused || IsFailed != failed)
+        var before = new object?[Shown.Length];
+        for (var i = 0; i < Shown.Length; i++)
         {
-            Raise(nameof(IsPaused));
-            Raise(nameof(IsFailed));
-            Raise(nameof(IsNotFailed));
-            Raise(nameof(IsRunningOrDone));
+            before[i] = Shown[i].Value(this);
+        }
+        Row = row;
+        for (var i = 0; i < Shown.Length; i++)
+        {
+            if (!Equals(before[i], Shown[i].Value(this))) Raise(Shown[i].Name);
         }
     }
 
+    /// <summary>Status colors come from the theme; after it changes, rows look them up again.</summary>
+    internal void RefreshLooks() => Raise(nameof(Status));
+
     private void Raise(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 }
+

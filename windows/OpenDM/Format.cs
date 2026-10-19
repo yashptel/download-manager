@@ -80,6 +80,59 @@ internal static class Format
         _ => row.Error ?? "Failed",
     };
 
+    /// <summary>The status in one word, "Failed" included.</summary>
+    public static string Title(TaskStatus status) => status switch
+    {
+        TaskStatus.Downloading => "Downloading",
+        TaskStatus.Queued => "Queued",
+        TaskStatus.Paused => "Paused",
+        TaskStatus.Complete => "Completed",
+        _ => "Failed",
+    };
+
+    /// <summary>"45 sec left", "3 min left", "2 hr 5 min left".</summary>
+    public static string? Remaining(ulong? seconds) => seconds switch
+    {
+        null => null,
+        < 60 => $"{seconds} sec left",
+        < 3600 => $"{seconds / 60} min left",
+        _ => $"{seconds / 3600} hr {seconds % 3600 / 60} min left",
+    };
+
+    /// <summary>One line describing where a download stands: "82 MB of 209 MB · 258 KB/s · 8 min left".</summary>
+    public static string Detail(TaskRow row) => Join(row.Status switch
+    {
+        TaskStatus.Downloading => [Amount(row), Speed(row.Speed), Remaining(row.EtaSecs)],
+        TaskStatus.Queued => ["Waiting", Amount(row)],
+        TaskStatus.Paused => ["Paused", Amount(row)],
+        TaskStatus.Complete => [row.TotalBytes > 0 ? Bytes(row.TotalBytes) : "Completed"],
+        _ => [row.Error ?? "Failed"],
+    });
+
+    /// <summary>A card's status line: the status, its speed and time left while downloading, or the error.</summary>
+    public static string CardStatus(TaskRow row) => row.Status switch
+    {
+        TaskStatus.Downloading => Join([Title(row.Status), Speed(row.Speed), Remaining(row.EtaSecs)]),
+        TaskStatus.Failed => row.Error ?? "Failed",
+        _ => Title(row.Status),
+    };
+
+    /// <summary>A card's size line: "40% · 82 MB / 209 MB"; "Not started" while waiting with nothing yet.</summary>
+    public static string CardAmount(TaskRow row)
+    {
+        if (row.Status == TaskStatus.Complete) return Size(row);
+        if (row.DoneBytes == 0 && row.TotalBytes == 0)
+        {
+            return row.Status is TaskStatus.Queued or TaskStatus.Paused ? "Not started" : "";
+        }
+        var size = row.TotalBytes == 0
+            ? Bytes(row.DoneBytes)
+            : $"{Bytes(Math.Min(row.DoneBytes, row.TotalBytes))} / {Bytes(row.TotalBytes)}";
+        return Join([Percent(row), size]);
+    }
+
+    private static string Join(string?[] parts) => string.Join(" \u00B7 ", parts.Where(part => !string.IsNullOrEmpty(part)));
+
     /// <summary>What waits when nothing downloads: "2 paused", "1 queued · 3 paused"; empty when nothing does.</summary>
     public static string Idle(IReadOnlyList<DownloadItem> items)
     {

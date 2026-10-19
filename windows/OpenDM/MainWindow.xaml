@@ -24,6 +24,213 @@
             <Style x:Key="NumberHeaderButtonStyle" TargetType="Button" BasedOn="{StaticResource HeaderButtonStyle}">
                 <Setter Property="HorizontalContentAlignment" Value="Right" />
             </Style>
+            <!-- Borderless icon buttons inside rows; the pointer-over background shows they can be pressed. -->
+            <Style x:Key="RowButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Width" Value="32" />
+                <Setter Property="Height" Value="28" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+
+            <!-- Rows realized off-screen keep their bindings and redraw on every progress
+                 tick, so every style keeps the item templates lean. -->
+            <Style x:Key="ColumnsItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="12,0,12,0" />
+                <Setter Property="MinHeight" Value="36" />
+            </Style>
+            <Style x:Key="ListItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="12,0,8,0" />
+                <Setter Property="MinHeight" Value="56" />
+            </Style>
+            <!-- The selection fills the card, which keeps its own corners. -->
+            <Style x:Key="CardsItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Margin" Value="4,3" />
+                <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}" />
+                <Setter Property="MinHeight" Value="96" />
+            </Style>
+
+            <!-- Columns: the IDM-style table; widths match the header row. -->
+            <DataTemplate x:Key="ColumnsTemplate" x:DataType="local:DownloadItem">
+                <Grid Height="36" ColumnSpacing="12" Background="Transparent">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="160" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="170" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="80" />
+                        <ColumnDefinition Width="140" />
+                    </Grid.ColumnDefinitions>
+                    <Grid ColumnSpacing="10" VerticalAlignment="Center" ToolTipService.ToolTip="{x:Bind Url}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="16" />
+                        <TextBlock Grid.Column="1" Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                    <!-- x:Phase="1": while scrolling fast, icon and name come first and the
+                         other columns follow over the next frames. -->
+                    <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind SizeText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <Grid Grid.Column="2" ColumnSpacing="8" VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="36" />
+                        </Grid.ColumnDefinitions>
+                        <!-- Drawn like the Fluent ProgressBar. A ProgressBar re-runs its
+                             template and visual states on every value change, which made
+                             each progress tick cost about 1 ms per visible row. Scaling
+                             the indicator needs no layout. -->
+                        <!-- The top margin moves the bar down 1 px to the middle of the
+                             digits beside it; text sits low in its line box. -->
+                        <Grid Height="3" Margin="0,2,0,0" VerticalAlignment="Center" Visibility="{x:Bind IsDeterminate, Mode=OneWay}">
+                            <!-- Not rounded to whole pixels: at 125% and 150% a rounded 1 px track
+                                 sits half a pixel above the middle of the 3 px indicator. -->
+                            <Rectangle Height="1" VerticalAlignment="Center" RadiusX="0.5" RadiusY="0.5" UseLayoutRounding="False"
+                                       Fill="{ThemeResource ControlStrongStrokeColorDefaultBrush}" />
+                            <Grid>
+                                <Grid.RenderTransform>
+                                    <ScaleTransform ScaleX="{x:Bind Fraction, Mode=OneWay}" />
+                                </Grid.RenderTransform>
+                                <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                           Visibility="{x:Bind IsRunningOrDone, Mode=OneWay}" />
+                                <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource SystemFillColorCautionBrush}"
+                                           Visibility="{x:Bind IsPaused, Mode=OneWay}" />
+                                <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                           Visibility="{x:Bind IsFailed, Mode=OneWay}" />
+                            </Grid>
+                        </Grid>
+                        <ProgressBar x:Name="Busy" x:Load="{x:Bind IsIndeterminate, Mode=OneWay}" IsIndeterminate="True"
+                                     Margin="0,2,0,0" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind PercentText, Mode=OneWay}" HorizontalAlignment="Right"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </Grid>
+                    <TextBlock Grid.Column="3" x:Phase="1" Text="{x:Bind SpeedText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="4" x:Phase="1" Text="{x:Bind EtaText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <!-- A colored symbol and one word; a failed row's error is its tooltip. -->
+                    <Grid Grid.Column="5" x:Phase="1" ColumnSpacing="6" VerticalAlignment="Center" Background="Transparent"
+                          ToolTipService.ToolTip="{x:Bind Error, Mode=OneWay}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="{x:Bind local:Looks.Glyph(Status), Mode=OneWay}" FontSize="12"
+                                  Foreground="{x:Bind local:Looks.Text(Status), Mode=OneWay}" />
+                        <TextBlock Grid.Column="1" Text="{x:Bind StatusTitle, Mode=OneWay}" TextTrimming="CharacterEllipsis"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </Grid>
+                </Grid>
+            </DataTemplate>
+
+            <!-- List: icon, name, a thin bar while unfinished, one detail line, and two
+                 buttons in fixed slots so they line up from row to row. -->
+            <DataTemplate x:Key="ListTemplate" x:DataType="local:DownloadItem">
+                <Grid Height="56" ColumnSpacing="12" Background="Transparent">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="32" />
+                        <ColumnDefinition Width="32" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="24" Width="28" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4" ToolTipService.ToolTip="{x:Bind Url}">
+                        <TextBlock Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                        <Grid Height="3" Visibility="{x:Bind IsDeterminate, Mode=OneWay}">
+                            <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource ControlStrongStrokeColorDefaultBrush}" Opacity="0.5" />
+                            <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{x:Bind local:Looks.Bar(Status), Mode=OneWay}">
+                                <Rectangle.RenderTransform>
+                                    <ScaleTransform ScaleX="{x:Bind Fraction, Mode=OneWay}" />
+                                </Rectangle.RenderTransform>
+                            </Rectangle>
+                        </Grid>
+                        <TextBlock x:Phase="1" Text="{x:Bind DetailText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                                   TextTrimming="CharacterEllipsis" Foreground="{x:Bind local:Looks.Detail(Status), Mode=OneWay}" />
+                    </StackPanel>
+                    <Button Grid.Column="2" Style="{StaticResource RowButtonStyle}" Click="RowPrimary_Click"
+                            Visibility="{x:Bind IsUnfinished, Mode=OneWay}"
+                            ToolTipService.ToolTip="{x:Bind PrimaryLabel, Mode=OneWay}"
+                            AutomationProperties.Name="{x:Bind PrimaryLabel, Mode=OneWay}">
+                        <FontIcon Glyph="{x:Bind PrimaryGlyph, Mode=OneWay}" FontSize="14" />
+                    </Button>
+                    <Button Grid.Column="3" Style="{StaticResource RowButtonStyle}" Click="RowReveal_Click"
+                            ToolTipService.ToolTip="Show in folder" AutomationProperties.Name="Show in folder">
+                        <FontIcon Glyph="&#xE838;" FontSize="14" />
+                    </Button>
+                </Grid>
+            </DataTemplate>
+
+            <!-- Cards: name, colored status line, a bar across the card, the size line,
+                 and the row's actions in a pill at the top right. -->
+            <DataTemplate x:Key="CardsTemplate" x:DataType="local:DownloadItem">
+                <Border Height="96" Padding="16,12,16,12" CornerRadius="{StaticResource OverlayCornerRadius}" BorderThickness="1"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                    <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <FontIcon Grid.RowSpan="2" Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="32" Width="36" VerticalAlignment="Top" Margin="0,2,0,0" />
+                        <TextBlock Grid.Column="1" Text="{x:Bind Name, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                   ToolTipService.ToolTip="{x:Bind Url}" />
+                        <Grid Grid.Row="1" Grid.Column="1" ColumnSpacing="6" Margin="0,2,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="{x:Bind local:Looks.Glyph(Status), Mode=OneWay}" FontSize="12"
+                                      Foreground="{x:Bind local:Looks.Text(Status), Mode=OneWay}" />
+                            <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind CardStatusText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                                       TextTrimming="CharacterEllipsis" Foreground="{x:Bind local:Looks.Text(Status), Mode=OneWay}"
+                                       ToolTipService.ToolTip="{x:Bind Error, Mode=OneWay}" />
+                        </Grid>
+                        <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Height="4" VerticalAlignment="Center">
+                            <Rectangle RadiusX="2" RadiusY="2" Fill="{ThemeResource ControlStrongStrokeColorDefaultBrush}" Opacity="0.5" />
+                            <Rectangle RadiusX="2" RadiusY="2" Fill="{x:Bind local:Looks.Bar(Status), Mode=OneWay}">
+                                <Rectangle.RenderTransform>
+                                    <ScaleTransform ScaleX="{x:Bind CardFraction, Mode=OneWay}" />
+                                </Rectangle.RenderTransform>
+                            </Rectangle>
+                        </Grid>
+                        <TextBlock Grid.Row="3" Grid.Column="1" x:Phase="1" Text="{x:Bind CardAmountText, Mode=OneWay}"
+                                   Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Border Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Top" Padding="4,0" CornerRadius="14" BorderThickness="1"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                <Button Style="{StaticResource RowButtonStyle}" Click="RowPrimary_Click"
+                                        ToolTipService.ToolTip="{x:Bind PrimaryLabel, Mode=OneWay}"
+                                        AutomationProperties.Name="{x:Bind PrimaryLabel, Mode=OneWay}">
+                                    <FontIcon Glyph="{x:Bind PrimaryGlyph, Mode=OneWay}" FontSize="14" />
+                                </Button>
+                                <Button Style="{StaticResource RowButtonStyle}" Click="RowReveal_Click"
+                                        ToolTipService.ToolTip="Show in folder" AutomationProperties.Name="Show in folder">
+                                    <FontIcon Glyph="&#xE838;" FontSize="14" />
+                                </Button>
+                                <Button Style="{StaticResource RowButtonStyle}" Click="RowCopy_Click"
+                                        ToolTipService.ToolTip="Copy address" AutomationProperties.Name="Copy address">
+                                    <FontIcon Glyph="&#xE71B;" FontSize="14" />
+                                </Button>
+                                <Button Style="{StaticResource RowButtonStyle}" Click="RowRemove_Click"
+                                        ToolTipService.ToolTip="Remove" AutomationProperties.Name="Remove">
+                                    <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+            </DataTemplate>
         </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
@@ -31,6 +238,9 @@
         </Grid.RowDefinitions>
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Modifiers="Control" Key="F" Invoked="FocusSearch_Invoked" />
+            <KeyboardAccelerator Modifiers="Control" Key="Number1" Invoked="Style_Invoked" />
+            <KeyboardAccelerator Modifiers="Control" Key="Number2" Invoked="Style_Invoked" />
+            <KeyboardAccelerator Modifiers="Control" Key="Number3" Invoked="Style_Invoked" />
         </Grid.KeyboardAccelerators>
 
         <!-- Custom title bar: the system draws the caption buttons on the right. -->
@@ -61,7 +271,7 @@
                 <Grid Padding="8,4,16,4" ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="260" />
+                        <ColumnDefinition Width="220" />
                     </Grid.ColumnDefinitions>
                     <CommandBar HorizontalAlignment="Left" DefaultLabelPosition="Right" Background="Transparent">
                         <AppBarButton x:Name="AddButton" Icon="Add" Label="New download" Click="Add_Click">
@@ -72,6 +282,19 @@
                         <AppBarButton x:Name="ResumeButton" Icon="Play" Label="Resume" Click="Resume_Click" IsEnabled="False" />
                         <AppBarButton x:Name="PauseButton" Icon="Pause" Label="Pause" Click="Pause_Click" IsEnabled="False" />
                         <AppBarButton x:Name="RemoveButton" Icon="Delete" Label="Remove" Click="Remove_Click" IsEnabled="False" />
+                        <AppBarSeparator />
+                        <AppBarButton x:Name="SortButton" Label="Sort">
+                            <AppBarButton.Icon><FontIcon Glyph="&#xE8CB;" /></AppBarButton.Icon>
+                            <AppBarButton.Flyout>
+                                <MenuFlyout x:Name="SortMenu" Placement="BottomEdgeAlignedLeft" />
+                            </AppBarButton.Flyout>
+                        </AppBarButton>
+                        <AppBarButton x:Name="ViewButton" Label="View">
+                            <AppBarButton.Icon><FontIcon Glyph="&#xE8FD;" /></AppBarButton.Icon>
+                            <AppBarButton.Flyout>
+                                <MenuFlyout x:Name="ViewMenu" Placement="BottomEdgeAlignedLeft" />
+                            </AppBarButton.Flyout>
+                        </AppBarButton>
                         <CommandBar.SecondaryCommands>
                             <AppBarButton Label="Resume all" Click="ResumeAll_Click" />
                             <AppBarButton Label="Pause all" Click="PauseAll_Click" />
@@ -83,8 +306,8 @@
                                     PlaceholderText="Search downloads" QueryIcon="Find" TextChanged="Search_TextChanged" />
                 </Grid>
 
-                <!-- Column widths match the item template below. -->
-                <Grid Grid.Row="1" Margin="12,0,12,0" Padding="12,0,12,0" ColumnSpacing="12">
+                <!-- Column widths match ColumnsTemplate. Shown in the Columns style only. -->
+                <Grid x:Name="ColumnHeaders" Grid.Row="1" Margin="12,0,12,0" Padding="12,0,12,0" ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" MinWidth="160" />
                         <ColumnDefinition Width="90" />
@@ -116,81 +339,6 @@
                     <ListView.ItemContainerTransitions>
                         <TransitionCollection />
                     </ListView.ItemContainerTransitions>
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Padding" Value="12,0,12,0" />
-                            <Setter Property="MinHeight" Value="36" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="local:DownloadItem">
-                            <Grid Height="36" ColumnSpacing="12" Background="Transparent">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" MinWidth="160" />
-                                    <ColumnDefinition Width="90" />
-                                    <ColumnDefinition Width="170" />
-                                    <ColumnDefinition Width="90" />
-                                    <ColumnDefinition Width="80" />
-                                    <ColumnDefinition Width="140" />
-                                </Grid.ColumnDefinitions>
-                                <Grid ColumnSpacing="10" VerticalAlignment="Center" ToolTipService.ToolTip="{x:Bind Url}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="16" />
-                                    <TextBlock Grid.Column="1" Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                                </Grid>
-                                <!-- x:Phase="1": while scrolling fast, icon and name come first and the
-                                     other columns follow over the next frames. -->
-                                <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind SizeText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                <Grid Grid.Column="2" ColumnSpacing="8" VerticalAlignment="Center">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="36" />
-                                    </Grid.ColumnDefinitions>
-                                    <!-- Drawn like the Fluent ProgressBar. A ProgressBar re-runs its
-                                         template and visual states on every value change, which made
-                                         each progress tick cost about 1 ms per visible row. Scaling
-                                         the indicator needs no layout. -->
-                                    <!-- The top margin moves the bar down 1 px to the middle of the
-                                         digits beside it; text sits low in its line box. -->
-                                    <Grid Height="3" Margin="0,2,0,0" VerticalAlignment="Center" Visibility="{x:Bind IsDeterminate, Mode=OneWay}">
-                                        <!-- Not rounded to whole pixels: at 125% and 150% a rounded 1 px track
-                                             sits half a pixel above the middle of the 3 px indicator. -->
-                                        <Rectangle Height="1" VerticalAlignment="Center" RadiusX="0.5" RadiusY="0.5" UseLayoutRounding="False"
-                                                   Fill="{ThemeResource ControlStrongStrokeColorDefaultBrush}" />
-                                        <Grid>
-                                            <Grid.RenderTransform>
-                                                <ScaleTransform ScaleX="{x:Bind Fraction, Mode=OneWay}" />
-                                            </Grid.RenderTransform>
-                                            <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                       Visibility="{x:Bind IsRunningOrDone, Mode=OneWay}" />
-                                            <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource SystemFillColorCautionBrush}"
-                                                       Visibility="{x:Bind IsPaused, Mode=OneWay}" />
-                                            <Rectangle RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource SystemFillColorCriticalBrush}"
-                                                       Visibility="{x:Bind IsFailed, Mode=OneWay}" />
-                                        </Grid>
-                                    </Grid>
-                                    <ProgressBar x:Name="Busy" x:Load="{x:Bind IsIndeterminate, Mode=OneWay}" IsIndeterminate="True"
-                                                 Margin="0,2,0,0" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" x:Phase="1" Text="{x:Bind PercentText, Mode=OneWay}" HorizontalAlignment="Right"
-                                               Style="{StaticResource CaptionTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                </Grid>
-                                <TextBlock Grid.Column="3" x:Phase="1" Text="{x:Bind SpeedText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="4" x:Phase="1" Text="{x:Bind EtaText, Mode=OneWay}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="5" x:Phase="1" Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" Visibility="{x:Bind IsNotFailed, Mode=OneWay}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBlock Grid.Column="5" x:Phase="1" Text="{x:Bind StatusText, Mode=OneWay}" VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" Visibility="{x:Bind IsFailed, Mode=OneWay}"
-                                           Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                           ToolTipService.ToolTip="{x:Bind StatusText, Mode=OneWay}" />
-                            </Grid>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
                 </ListView>
 
                 <TextBlock x:Name="EmptyText" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -199,3 +347,4 @@
         </NavigationView>
     </Grid>
 </Window>
+
