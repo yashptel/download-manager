@@ -13,3 +13,4 @@
 .vs/
 .DS_Store
 .playwright-mcp/
+__pycache__/

@@ -9,6 +9,20 @@ const isFirefox = api.runtime.getURL("").startsWith("moz-extension:");
 const HOST = "org.opendm.host";
 const VERSION = api.runtime.getManifest().version;
 
+// Sites whose videos and audio are left alone. Empty here; the Chrome Web
+// Store package lists YouTube (scripts/package-extension.py), whose policy
+// does not allow downloading from it. The packager replaces this exact line.
+const MEDIA_BLOCKED_HOSTS = [];
+function mediaBlocked(url) {
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return MEDIA_BLOCKED_HOSTS.some((blocked) => host === blocked || host.endsWith("." + blocked));
+}
+
 // The app's defaults (Settings::default in core/src/settings.rs), used until
 // it has sent its own rules once.
 const DEFAULT_RULES = {
@@ -480,6 +494,7 @@ function responseSize(details) {
 
 /** Adds a find to the tab's list, or fills in what an earlier find lacked. */
 function addMedia(tabId, found) {
+  if (mediaBlocked(found.url)) return;
   const list = media.get(tabId) ?? [];
   const known = list.find((entry) => entry.url === found.url);
   if (known) {
@@ -853,6 +868,9 @@ function streamGroups(entry, presentation) {
  * URL; page is the page to ask yt-dlp about when it is not the tab's. */
 async function formats(tabId, src, page) {
   const tab = await api.tabs.get(tabId).catch(() => null);
+  if (mediaBlocked(page || tab?.url || "")) {
+    return { title: tab?.title ?? "", groups: [], note: "This version of OpenDM Connect does not download videos from this site." };
+  }
   // yt-dlp first, since it adds finds. With finds from the page already in
   // hand, a slow answer is not worth waiting long for.
   const ownFinds = visibleMedia(tabId).length > 0;

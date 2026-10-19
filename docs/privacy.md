@@ -55,6 +55,8 @@ folder (`~/Library/Application Support/OpenDM` on macOS,
 
 ## Contact
 
+This policy is published at https://opendm.squiwo.com/privacy.
+
 Questions about this policy: open an issue at
 https://github.com/yashptel/download-manager/issues or email
 yashptel2899@gmail.com.

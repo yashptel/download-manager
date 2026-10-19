@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy · OpenDM</title>
+  <meta name="description" content="What OpenDM and OpenDM Connect handle, and where it goes: only the OpenDM app on your own computer.">
+  <meta name="theme-color" content="#0b1020">
+  <link rel="icon" href="/assets/favicon.png">
+  <link rel="canonical" href="https://opendm.squiwo.com/privacy">
+  <meta property="og:title" content="Privacy policy · OpenDM">
+  <meta property="og:description" content="What OpenDM and OpenDM Connect handle, and where it goes: only the OpenDM app on your own computer.">
+  <meta property="og:image" content="https://opendm.squiwo.com/assets/og.png">
+  <meta property="og:url" content="https://opendm.squiwo.com/privacy">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top"><div class="wrap">
+    <a class="brand" href="/"><img src="/assets/icon.png" alt="">OpenDM</a>
+    <nav>
+      <a class="hide-sm" href="/#features">Features</a>
+      <a class="hide-sm" href="/#extension">Browser extension</a>
+      <a href="/privacy">Privacy</a>
+      <a href="https://github.com/yashptel/download-manager">GitHub</a>
+    </nav>
+  </div></header>
+  <main class="prose">
+<h1>Privacy policy</h1>
+<p class="updated">Last updated: October 19, 2026</p>
+<p>OpenDM is a free, open-source download manager for macOS and Windows. OpenDM Connect is its browser extension for Chrome, Edge and Firefox. Neither one has an account, analytics, advertising or a server of its own. This page explains what the extension and the app handle and where that data goes.</p>
+<h2>What OpenDM Connect handles</h2>
+<p>The extension's one job is to hand downloads from the browser to the OpenDM app on the same computer. To do that it handles:</p>
+<ul><li><strong>Download details.</strong> The address of each download you start, choose from the video menu or send with "Download with OpenDM", the page it came from (the referrer), the page's title for naming videos, and the request headers and user agent the download needs.</li><li><strong>Cookies for that download.</strong> When a download is handed over, the extension reads the cookies for that download's own address, so files that need you to be signed in download the same way they would in the browser.</li><li><strong>Media the page plays.</strong> To list a video's qualities, the extension notes the addresses of media files and streaming playlists a tab loads, while the tab is open.</li><li><strong>The browser's proxy setting</strong>, read only, so OpenDM uses the same proxy.</li><li><strong>Two settings</strong>, stored in the browser: whether download capture is on, and the capture rules (file types, excluded sites, minimum size).</li></ul>
+<h2>Where it goes</h2>
+<p>All of the above goes to one place: the OpenDM app on your own computer, through the browser's native messaging. The extension sends nothing to the developer or to anyone else, and it does not sell, share or transfer data.</p>
+<p>The OpenDM app then connects to the servers you download from, sending them the requests the download needs, as the browser would. It keeps a download history and its settings on your computer, and saved site logins in the system keychain (macOS) or credential store (Windows).</p>
+<h2>Other connections the app makes</h2>
+<ul><li><strong>Update check.</strong> Once a day, unless turned off in Settings, the app asks GitHub for the latest OpenDM release. The request carries no personal data beyond what any web request does, such as your IP address.</li><li><strong>Video site support.</strong> To read some video sites, the app downloads the open-source tools yt-dlp and Deno from their official GitHub releases and runs them on your computer for the pages you ask about.</li></ul>
+<h2>Removing your data</h2>
+<p>Uninstalling the extension removes its settings. The app's history, settings and logins can be cleared from within the app, or by deleting its data folder (<code>~/Library/Application Support/OpenDM</code> on macOS, <code>%LOCALAPPDATA%\OpenDM</code> on Windows).</p>
+<h2>Contact</h2>
+<p>This policy is published at <a href="https://opendm.squiwo.com/privacy">opendm.squiwo.com/privacy</a>.</p>
+<p>Questions about this policy: open an issue at <a href="https://github.com/yashptel/download-manager/issues">https://github.com/yashptel/download-manager/issues</a> or email <a href="mailto:yashptel2899@gmail.com">yashptel2899@gmail.com</a>.</p>
+  </main>
+  <footer><div class="wrap">
+    <span>© 2026 OpenDM · Free and open source under the MIT license</span>
+    <span class="spacer"></span>
+    <a href="/privacy">Privacy</a>
+    <a href="/support">Support</a>
+    <a href="https://github.com/yashptel/download-manager">Source</a>
+    <a href="https://github.com/yashptel/download-manager/releases">Releases</a>
+  </div></footer>
+</body>
+</html>

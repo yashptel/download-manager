@@ -13,11 +13,14 @@ workflow and dialogs, with native UIs on each platform. OpenDM is a working name
 | `vendor/aria2-next/` | Pinned engine version and checksums; binaries are downloaded, not committed |
 | `scripts/` | Build, engine fetch, icon and test-server scripts |
 | `tests/browser/` | Chrome and Firefox tests of the extension, host and app together |
-| `docs/` | Research notes, design decisions and the icon |
+| `docs/` | Research notes, design decisions, privacy policy and the icon |
+| `site/` | The website, a static Vercel project served at opendm.squiwo.com |
+| `store/` | Browser store listing images |
 
-Both apps have IDM's Download File Info dialog, progress windows, site
-logins, address refresh and full settings; see
-[docs/research.md](docs/research.md) for the design and
+Website: [opendm.squiwo.com](https://opendm.squiwo.com). Both apps have IDM's
+Download File Info dialog, progress windows, site logins, address refresh and
+full settings; see [docs/research.md](docs/research.md) for the design,
+[docs/privacy.md](docs/privacy.md) for the privacy policy and
 [docs/releasing.md](docs/releasing.md) for installers, signing and updates.
 
 ## Install

@@ -69,9 +69,14 @@ workflow reads them from the `MACOS_CERTIFICATE` (base64 .p12),
 
 ## The browser extension
 
-`opendm-connect-<version>.zip` is the package for all three stores. It
-leaves out the manifest's `key`, which only fixes the ID of the unpacked
-development copy.
+`scripts/package-extension.py` writes two packages. Both leave out the
+manifest's `key`, which only fixes the ID of the unpacked development copy.
+
+- `opendm-connect-<version>.zip` for Firefox and Edge.
+- `opendm-connect-<version>-chrome.zip` for the Chrome Web Store (item
+  `mjebgoilgooegcpfbmjnapamjpcnhcbg`). It leaves YouTube's videos alone,
+  as that store's policy requires: the packager fills
+  `MEDIA_BLOCKED_HOSTS` in `background.js` and `content.js`.
 
 - **Firefox** (addons.mozilla.org): the add-on keeps the ID
   `connect@opendm.org` from its manifest, which the native host already

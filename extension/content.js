@@ -60,6 +60,9 @@
 
   // ─── Video button and quality menu ──────────────────────────────────────
 
+  // As in background.js: empty here, filled in by the Chrome Web Store package.
+  const MEDIA_BLOCKED_HOSTS = [];
+  const blockedHere = MEDIA_BLOCKED_HOSTS.some((blocked) => location.hostname === blocked || location.hostname.endsWith("." + blocked));
   const videos = document.getElementsByTagName("video"); // Live, so cheap to re-read.
   let host = null;
   let button = null;
@@ -293,7 +296,7 @@
     "mousemove",
     (event) => {
       const now = performance.now();
-      if (now - lastMove < 120 || videos.length === 0) return;
+      if (blockedHere || now - lastMove < 120 || videos.length === 0) return;
       lastMove = now;
       const video = videoAt(event.clientX, event.clientY);
       if (video) show(video);
