@@ -245,6 +245,11 @@ public sealed partial class SettingsWindow : Window
                 UpdateText.Text = "You have the latest version.";
             }
         }
+        catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Nothing failed: there is just nothing newer to offer.
+            UpdateText.Text = error.Message;
+        }
         catch (HttpRequestException error)
         {
             UpdateText.Text = $"Could not check for updates. {error.Message}";
@@ -484,4 +489,3 @@ internal static class StartAtSignIn
         }
     }
 }
-

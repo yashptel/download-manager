@@ -315,11 +315,13 @@ private struct GeneralSettings: View {
                 Text("Updates")
             } footer: {
                 if !updateText.isEmpty {
-                    HStack(spacing: 6) {
-                        Note(updateText)
+                    // The link follows the sentence it belongs to.
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(updateText).font(.callout).foregroundStyle(.secondary)
                         if let updatePage {
                             Link("Download", destination: updatePage).font(.callout)
                         }
+                        Spacer(minLength: 0)
                     }
                 }
             }
@@ -340,6 +342,9 @@ private struct GeneralSettings: View {
             } else {
                 updateText = "You have the latest version."
             }
+        } catch Updates.CheckError.noRelease {
+            // Nothing failed: there is just nothing newer to offer.
+            updateText = "No release has been published yet."
         } catch {
             updateText = "Could not check for updates. \(error.localizedDescription)"
         }

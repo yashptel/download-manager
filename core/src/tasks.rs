@@ -972,6 +972,11 @@ pub fn friendly_error(message: &str) -> String {
     if message.starts_with("Operation timed out") {
         return "The server stopped responding".into();
     }
+    // A stream's segment refused: "Media HTTP request failed: status=403 curl=22".
+    let message = match message.strip_prefix("Media HTTP request failed: status=") {
+        Some(rest) => format!("HTTP {rest}"),
+        None => message.to_string(),
+    };
     let status = message
         .strip_prefix("HTTP ")
         .and_then(|rest| rest.get(..3))
@@ -980,7 +985,7 @@ pub fn friendly_error(message: &str) -> String {
         Some(401) => "The server asks for a login (HTTP 401)".into(),
         Some(403) => "The server refused the download (HTTP 403)".into(),
         Some(code @ (404 | 410)) => format!("The file is not on the server (HTTP {code})"),
-        _ => message.to_string(),
+        _ => message,
     }
 }
 
@@ -1830,6 +1835,10 @@ mod tests {
             "The server stopped responding"
         );
         assert_eq!(friendly_error("HTTP 404 Not Found"), "The file is not on the server (HTTP 404)");
+        assert_eq!(
+            friendly_error("Media HTTP request failed: status=403 curl=22"),
+            "The server refused the download (HTTP 403)"
+        );
         // Already friendly, as when read back from the history.
         assert_eq!(friendly_error("Could not connect to 127.0.0.1:8783"), "Could not connect to 127.0.0.1:8783");
     }

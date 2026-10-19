@@ -43,7 +43,7 @@ internal static class Updates
         using var response = await http.GetAsync(Environment.GetEnvironmentVariable("OPENDM_UPDATE_URL") ?? LatestRelease);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            throw new HttpRequestException("No release has been published yet.");
+            throw new HttpRequestException("No release has been published yet.", null, HttpStatusCode.NotFound);
         }
         response.EnsureSuccessStatusCode();
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -59,4 +59,3 @@ internal static class Updates
         return Version.TryParse(plain, out var version) ? version : null;
     }
 }
-
