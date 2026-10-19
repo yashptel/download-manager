@@ -77,8 +77,16 @@ internal static class Format
         TaskStatus.Queued => "Queued",
         TaskStatus.Paused => "Paused",
         TaskStatus.Complete => "Completed",
-        _ => row.Error ?? "Failed",
+        _ => Join([row.Error ?? "Failed", Retrying(row)]),
     };
+
+    /// <summary>The status a row looks like: a download waiting to try again looks queued, not failed.</summary>
+    public static TaskStatus Shown(TaskRow row) => row.RetryAt is null ? row.Status : TaskStatus.Queued;
+
+    /// <summary>"Retrying at 10:52", for a failed download the app tries again on its own.</summary>
+    public static string? Retrying(TaskRow row) => row.RetryAt is { } at
+        ? "Retrying at " + DateTimeOffset.FromUnixTimeMilliseconds(at).LocalDateTime.ToString("t", CultureInfo.CurrentCulture)
+        : null;
 
     /// <summary>The status in one word, "Failed" included.</summary>
     public static string Title(TaskStatus status) => status switch
@@ -106,14 +114,14 @@ internal static class Format
         TaskStatus.Queued => ["Waiting", Amount(row)],
         TaskStatus.Paused => ["Paused", Amount(row)],
         TaskStatus.Complete => [row.TotalBytes > 0 ? Bytes(row.TotalBytes) : "Completed"],
-        _ => [row.Error ?? "Failed"],
+        _ => [row.Error ?? "Failed", Retrying(row)],
     });
 
     /// <summary>A card's status line: the status, its speed and time left while downloading, or the error.</summary>
     public static string CardStatus(TaskRow row) => row.Status switch
     {
         TaskStatus.Downloading => Join([Title(row.Status), Speed(row.Speed), Remaining(row.EtaSecs)]),
-        TaskStatus.Failed => row.Error ?? "Failed",
+        TaskStatus.Failed => Join([row.Error ?? "Failed", Retrying(row)]),
         _ => Title(row.Status),
     };
 

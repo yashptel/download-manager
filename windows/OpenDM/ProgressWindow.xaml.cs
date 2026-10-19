@@ -130,12 +130,12 @@ public sealed partial class ProgressWindow : Window
         else
         {
             var downloading = row.Status == TaskStatus.Downloading;
-            var failed = row.Status == TaskStatus.Failed;
+            var failed = Format.Shown(row) == TaskStatus.Failed;
             Bar.IsIndeterminate = row.Progress < 0 && downloading;
             Bar.Value = Math.Clamp(row.Progress, 0, 1);
-            Bar.ShowPaused = row.Status is TaskStatus.Paused or TaskStatus.Queued;
+            Bar.ShowPaused = Format.Shown(row) is TaskStatus.Paused or TaskStatus.Queued;
             Bar.ShowError = failed;
-            StatusText.Text = failed ? row.Error ?? "Failed" : Format.Status(row);
+            StatusText.Text = Format.Status(row);
             StatusText.Foreground = failed ? Brush("SystemFillColorCriticalBrush") : Brush("TextFillColorPrimaryBrush");
             DownloadedText.Text = Dash(string.Join(" \u00B7 ", new[] { Format.Amount(row), Format.Percent(row) }.Where(part => part.Length > 0)));
             // These stay while paused so the window keeps its height.
@@ -197,7 +197,7 @@ public sealed partial class ProgressWindow : Window
                 }
             }
             // The progress bar's color, so a paused download's parts turn with it.
-            var fill = row?.Status switch
+            var fill = (row is null ? (TaskStatus?)null : Format.Shown(row)) switch
             {
                 TaskStatus.Paused or TaskStatus.Queued => Brush("SystemFillColorCautionBrush"),
                 TaskStatus.Failed => Brush("SystemFillColorCriticalBrush"),

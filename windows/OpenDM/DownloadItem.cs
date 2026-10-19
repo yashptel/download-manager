@@ -58,11 +58,12 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public string PercentText => IsDeterminate ? Format.Percent(Row) : "";
     public string SpeedText => Format.Speed(Row.Speed);
     public string EtaText => Format.Eta(Row.EtaSecs);
-    internal TaskStatus Status => Row.Status;
-    public string StatusTitle => Format.Title(Row.Status);
+    /// <summary>For the row's colors and symbols.</summary>
+    internal TaskStatus Status => Format.Shown(Row);
+    public string StatusTitle => Format.Retrying(Row) ?? Format.Title(Row.Status);
     public string? Error => Row.Status == TaskStatus.Failed ? Row.Error : null;
     public bool IsPaused => Row.Status == TaskStatus.Paused;
-    public bool IsFailed => Row.Status == TaskStatus.Failed;
+    public bool IsFailed => Status == TaskStatus.Failed;
     public bool IsRunningOrDone => !IsPaused && !IsFailed;
     public string DetailText => Format.Detail(Row);
     public string CardStatusText => Format.CardStatus(Row);
