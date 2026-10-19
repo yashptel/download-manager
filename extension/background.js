@@ -932,7 +932,10 @@ async function formats(tabId, src, page, manifest = "") {
     siteNote = error.message;
     return [];
   });
-  const videos = await Promise.race([site, new Promise((resolve) => setTimeout(() => resolve([]), ownFinds ? 4000 : 120_000))]);
+  // yt-dlp usually answers in ten seconds. A slower page gets what is known so
+  // far and a note; the lookup goes on and the next click finds it done.
+  const settled = await Promise.race([site.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), ownFinds ? 4000 : 15_000))]);
+  const videos = settled ? await site : [];
   // A fresh answer replaces the page's earlier one: its URLs are signed anew.
   if (videos.length) {
     const fresh = new Set(videos.flatMap((video) => [...video.streams, ...video.files].map((f) => f.url)));
@@ -1011,7 +1014,7 @@ async function formats(tabId, src, page, manifest = "") {
     addTo(entry.site?.group ?? "Files", [option]);
   }
   // Why nothing was found, when yt-dlp knows and the page is one it handles.
-  const note = groups.length || /unsupported url/i.test(siteNote) ? "" : siteNote;
+  const note = groups.length ? "" : !settled ? "OpenDM is still reading this page. Try again in a moment." : /unsupported url/i.test(siteNote) ? "" : siteNote;
   return { title: tab?.title ?? "", groups, note };
 }
 

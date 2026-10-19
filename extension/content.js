@@ -70,6 +70,8 @@
   let hideTimer = 0;
   let lastMove = 0;
   let busy = false;
+  let asked = ""; // The page the button's open question is about.
+  let ticket = 0;
   let prefetched = "";
 
   /** The video large enough to matter under the pointer. The event's path
@@ -258,10 +260,17 @@
     if (menu) return closeMenu();
     if (busy || !current) return;
     busy = true;
+    asked = location.href;
+    const mine = ++ticket;
     label("Finding qualities…");
-    const answer = await send({ type: "formats", src: current.currentSrc || current.src || "", manifest: manifestFor(current), link: linkFor(current) });
+    const question = send({ type: "formats", src: current.currentSrc || current.src || "", manifest: manifestFor(current), link: linkFor(current) });
+    const late = new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: "OpenDM is taking long. Try again." }), 30_000));
+    const answer = await Promise.race([question, late]);
+    if (mine !== ticket) return;
     busy = false;
     label("Download video");
+    // The page moved on meanwhile (the next short); this answer is for a video that is gone.
+    if (asked !== location.href) return;
     if (!answer?.ok) return flash(answer?.error || "OpenDM is not available", 3500);
     openMenu(answer.groups ?? [], answer.note);
   }
@@ -330,6 +339,12 @@
       const now = performance.now();
       if (blockedHere || now - lastMove < 120) return;
       lastMove = now;
+      if (busy && asked !== location.href) {
+        ticket++;
+        busy = false;
+        label("Download video");
+        if (menu) closeMenu();
+      }
       const video = videoAt(event);
       if (video) show(video);
     },
