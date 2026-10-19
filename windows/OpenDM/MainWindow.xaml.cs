@@ -466,7 +466,8 @@ public sealed partial class MainWindow : Window
 
     private static bool CanResume(TaskRow row) => row.Status is TaskStatus.Paused or TaskStatus.Failed;
 
-    private static bool CanPause(TaskRow row) => row.Status is TaskStatus.Downloading or TaskStatus.Queued;
+    /// <summary>Running, queued, or waiting to try again on its own.</summary>
+    private static bool CanPause(TaskRow row) => Format.Shown(row) is TaskStatus.Downloading or TaskStatus.Queued;
 
     private void UpdateCommands()
     {

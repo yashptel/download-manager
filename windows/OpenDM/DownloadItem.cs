@@ -73,7 +73,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public bool IsUnfinished => Row.Status != TaskStatus.Complete;
 
     /// <summary>The row's main button: pause, resume, retry or open.</summary>
-    public string PrimaryGlyph => Row.Status switch
+    public string PrimaryGlyph => Status switch
     {
         TaskStatus.Downloading or TaskStatus.Queued => "\uE769",
         TaskStatus.Paused => "\uE768",
@@ -81,7 +81,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
         _ => "\uE8A7",
     };
 
-    public string PrimaryLabel => Row.Status switch
+    public string PrimaryLabel => Status switch
     {
         TaskStatus.Downloading or TaskStatus.Queued => "Pause",
         TaskStatus.Paused => "Resume",

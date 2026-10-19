@@ -21,6 +21,8 @@ static FLAKY: AtomicBool = AtomicBool::new(true);
 /// While set, /outage/ cuts every connection partway, like a server that
 /// blocks this address for a while.
 static OUTAGE: AtomicBool = AtomicBool::new(true);
+/// Like OUTAGE, for /blocked/.
+static BLOCKED: AtomicBool = AtomicBool::new(true);
 
 fn engine_path() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("OPENDM_TEST_ENGINE") {
@@ -129,6 +131,9 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
         }
         if line.contains(" /outage/") {
             flaky = OUTAGE.load(Ordering::SeqCst);
+        }
+        if line.contains(" /blocked/") {
+            flaky = BLOCKED.load(Ordering::SeqCst);
         }
         // An address that has expired partway through.
         if line.contains(" /expires/") {
@@ -469,6 +474,57 @@ fn a_download_cut_off_partway_tries_again_on_its_own() {
     OUTAGE.store(false, Ordering::SeqCst);
     let mut least = u64::MAX;
     wait_until("completion after the retry", Duration::from_secs(90), || {
+        let row = row(&core, &id).unwrap();
+        least = least.min(row.done_bytes);
+        row.status == TaskStatus::Complete
+    });
+    assert!(least >= kept, "went back from {kept} to {least} bytes");
+    let bytes = std::fs::read(row(&core, &id).unwrap().path.unwrap()).unwrap();
+    assert_eq!(bytes.len() as u64, FILE_SIZE);
+    let first_wrong = bytes.iter().enumerate().position(|(index, byte)| *byte != byte_at(index as u64));
+    assert_eq!(first_wrong, None, "the file should be correct throughout");
+    core.shutdown();
+}
+
+#[test]
+fn a_download_waiting_to_retry_can_be_paused_and_resumed() {
+    let Some(engine) = engine_path() else {
+        eprintln!("skipped: no aria2-next binary (run scripts/fetch-engine.sh)");
+        return;
+    };
+    let port = serve();
+    let temp = tempfile::tempdir().unwrap();
+    let downloads = temp.path().join("downloads");
+    let core = open(&engine, &temp.path().join("data"), &downloads, Arc::new(Recorder::default()));
+    let mut settings = core.settings();
+    settings.max_tries = 1;
+    settings.retry_wait = 0;
+    core.set_settings(settings).unwrap();
+    core.start();
+    wait_until("engine start", Duration::from_secs(15), || {
+        core.engine_state() == EngineState::Running
+    });
+
+    let id = core.add_downloads(
+        vec![NewDownload { url: format!("http://127.0.0.1:{port}/blocked/big.bin"), ..NewDownload::default() }],
+        false,
+    )[0]
+    .clone();
+    wait_until("the failure", Duration::from_secs(30), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Failed && row.retry_at.is_some())
+    });
+    let kept = recorded(&temp.path().join("data"), &id);
+
+    // Pause stops the waiting: the download is paused, with nothing to retry.
+    core.pause(vec![id.clone()]);
+    wait_until("the pause", Duration::from_secs(10), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Paused && row.retry_at.is_none())
+    });
+
+    BLOCKED.store(false, Ordering::SeqCst);
+    core.resume(vec![id.clone()]);
+    let mut least = u64::MAX;
+    wait_until("completion after resuming", Duration::from_secs(60), || {
         let row = row(&core, &id).unwrap();
         least = least.min(row.done_bytes);
         row.status == TaskStatus::Complete

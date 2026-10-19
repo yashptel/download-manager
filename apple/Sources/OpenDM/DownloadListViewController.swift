@@ -413,7 +413,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         guard let row = store.row(id) else { return }
         switch action {
         case .primary:
-            switch row.status {
+            switch row.shownStatus {
             case .complete: open([row])
             case .downloading, .queued: pause([row])
             case .paused, .failed: resume([row])
@@ -474,7 +474,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
     }
 
     func pause(_ rows: [TaskRow]) {
-        let ids = rows.filter { $0.status == .downloading || $0.status == .queued }.map(\.id)
+        let ids = rows.filter(\.canPause).map(\.id)
         if !ids.isEmpty { core.pause(ids: ids) }
     }
 
@@ -532,7 +532,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
             remove(selectedRows(), deletingFiles: modifiers.contains(.option))
         case 49: // Space toggles the selection between running and paused.
             let rows = selectedRows()
-            if rows.contains(where: { $0.status == .downloading || $0.status == .queued }) { pause(rows) } else { resume(rows) }
+            if rows.contains(where: \.canPause) { pause(rows) } else { resume(rows) }
         case 36, 76: // Return, Enter
             open(selectedRows())
         default:
@@ -556,7 +556,7 @@ final class DownloadListViewController: NSViewController, NSTableViewDataSource,
         add("Show in Finder", #selector(contextReveal))
         menu.addItem(.separator())
         add("Resume", #selector(contextResume), enabled: rows.contains { $0.status == .paused || $0.status == .failed })
-        add("Pause", #selector(contextPause), enabled: rows.contains { $0.status == .downloading || $0.status == .queued })
+        add("Pause", #selector(contextPause), enabled: rows.contains(where: \.canPause))
         menu.addItem(.separator())
         add("Copy Address", #selector(contextCopy))
         add("Refresh Download Address…", #selector(contextRefreshAddress),

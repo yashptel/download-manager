@@ -239,7 +239,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         let rows = list.selectedRows()
         switch action {
         case #selector(resumeSelected(_:)): return rows.contains { $0.status == .paused || $0.status == .failed }
-        case #selector(pauseSelected(_:)): return rows.contains { $0.status == .downloading || $0.status == .queued }
+        case #selector(pauseSelected(_:)): return rows.contains(where: \.canPause)
         case #selector(openSelected(_:)): return rows.contains { $0.status == .complete }
         case #selector(removeSelected(_:)), #selector(removeSelectedDeletingFiles(_:)),
              #selector(revealSelected(_:)), #selector(copy(_:)):

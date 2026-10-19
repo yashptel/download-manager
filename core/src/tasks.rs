@@ -1040,17 +1040,52 @@ pub async fn add(
 pub async fn pause(shared: &Shared, ids: Vec<String>) -> Result<(), String> {
     let rpc = shared.wait_rpc().await?;
     let targets = select(shared, &ids, |task| {
-        matches!(
-            task.row.status,
-            TaskStatus::Downloading | TaskStatus::Queued
-        )
+        matches!(task.row.status, TaskStatus::Downloading | TaskStatus::Queued) || waiting_to_retry(task)
     });
-    let calls = targets
+    let calls: Vec<_> = targets
         .iter()
+        .filter(|task| !waiting_to_retry(task))
         .map(|task| ("aria2.forcePause", vec![json!(task.row.id)]))
         .collect();
-    rpc.multicall(calls).await?;
+    if !calls.is_empty() {
+        rpc.multicall(calls).await?;
+    }
+    let mut errors = Vec::new();
+    for task in targets.iter().filter(|task| waiting_to_retry(task)) {
+        if let Err(error) = pause_waiting(shared, &rpc, task).await {
+            errors.push(format!("{}: {error}", task.row.name));
+        }
+    }
     finish_action(shared, &rpc, &targets).await;
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("Could not pause {}", errors.join("; ")))
+    }
+}
+
+fn waiting_to_retry(task: &Task) -> bool {
+    task.row.status == TaskStatus::Failed && task.row.retry_at.is_some()
+}
+
+/// Stops a download waiting to try again: it goes back to the engine
+/// paused, keeping what is on disk, and resumes like any paused download.
+async fn pause_waiting(shared: &Shared, rpc: &Rpc, task: &Task) -> Result<(), String> {
+    let mut options = readd_options(rpc, task).await;
+    options.insert("pause".into(), json!("true"));
+    let progress = saved_progress(shared, &task.row.id);
+    restart(shared, rpc, task, &task.row.url, options, progress).await?;
+    let row = {
+        let mut table = shared.tasks.lock().unwrap();
+        let Some(task) = table.tasks.get_mut(&task.row.id) else {
+            return Ok(());
+        };
+        task.row.status = TaskStatus::Paused;
+        task.row.retry_at = None;
+        task.row.error = None;
+        task.row.clone()
+    };
+    shared.listener.rows_changed(vec![row]);
     Ok(())
 }
 
@@ -1462,11 +1497,11 @@ pub async fn pause_all(shared: &Shared) -> Result<(), String> {
     let rpc = shared.wait_rpc().await?;
     rpc.call("aria2.forcePauseAll", vec![]).await?;
     let targets = select(shared, &[], |task| {
-        matches!(
-            task.row.status,
-            TaskStatus::Downloading | TaskStatus::Queued
-        )
+        matches!(task.row.status, TaskStatus::Downloading | TaskStatus::Queued) || waiting_to_retry(task)
     });
+    for task in targets.iter().filter(|task| waiting_to_retry(task)) {
+        let _ = pause_waiting(shared, &rpc, task).await;
+    }
     finish_action(shared, &rpc, &targets).await;
     Ok(())
 }

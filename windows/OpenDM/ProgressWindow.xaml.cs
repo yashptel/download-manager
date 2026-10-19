@@ -142,7 +142,7 @@ public sealed partial class ProgressWindow : Window
             SpeedText.Text = Dash(downloading ? Format.Speed(row.Speed) : "");
             TimeLeftText.Text = Dash(downloading ? Format.TimeLeft(row.EtaSecs) : "");
             ConnectionsText.Text = Dash(downloading && row.Connections > 0 ? row.Connections.ToString() : "");
-            PrimaryButton.Content = row.Status switch
+            PrimaryButton.Content = Format.Shown(row) switch
             {
                 TaskStatus.Paused => "Resume",
                 TaskStatus.Failed => "Retry",
@@ -234,7 +234,7 @@ public sealed partial class ProgressWindow : Window
     private void Primary_Click(object sender, RoutedEventArgs e)
     {
         if (row is null) return;
-        switch (row.Status)
+        switch (Format.Shown(row))
         {
             case TaskStatus.Complete:
                 if (row.Path is { } path) Shell.Open(path);

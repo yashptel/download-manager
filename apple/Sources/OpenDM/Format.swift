@@ -149,6 +149,13 @@ struct StatusLook {
     }
 }
 
+extension TaskRow {
+    /// Running, queued, or waiting to try again on its own.
+    var canPause: Bool { shownStatus == .downloading || shownStatus == .queued }
+    /// The status the row looks like: a download waiting to try again looks queued.
+    var shownStatus: TaskStatus { retryAt == nil ? status : .queued }
+}
+
 @MainActor
 enum FileIcons {
     private static var cache: [String: NSImage] = [:]

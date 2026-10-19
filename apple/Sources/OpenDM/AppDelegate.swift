@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(pauseAll(_:)): store.rows.contains { $0.status == .downloading || $0.status == .queued }
+        case #selector(pauseAll(_:)): store.rows.contains(where: \.canPause)
         case #selector(resumeAll(_:)): store.rows.contains { $0.status == .paused }
         default: true
         }

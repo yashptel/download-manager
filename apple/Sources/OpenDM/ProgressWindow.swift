@@ -222,8 +222,8 @@ struct DownloadProgressView: View {
             Button("Cancel") { act(.cancel) }
                 .help("Stops the download; it stays in the list to resume later.")
                 .keyboardShortcut(.cancelAction)
-            if row.status == .paused || row.status == .failed {
-                Button(row.status == .failed ? "Retry" : "Resume") { act(.resume) }
+            if !row.canPause {
+                Button(row.shownStatus == .failed ? "Retry" : "Resume") { act(.resume) }
                     .keyboardShortcut(.defaultAction)
             } else {
                 Button("Pause") { act(.pause) }

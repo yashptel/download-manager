@@ -170,7 +170,7 @@ final class CardCellView: NSTableCellView {
         }
         amountText.setIfChanged(amount)
 
-        let (symbol, label): (String, String) = switch task.status {
+        let (symbol, label): (String, String) = switch task.shownStatus {
         case .downloading, .queued: ("pause", "Pause")
         case .paused: ("play", "Resume")
         case .failed: ("arrow.clockwise", "Retry")
@@ -273,7 +273,7 @@ final class ListCellView: NSTableCellView {
 
     func show(_ task: TaskRow) {
         // Red only for a failure that stays; one waiting to try again looks queued.
-        status = task.retryAt == nil ? task.status : .queued
+        status = task.shownStatus
         name.setIfChanged(task.name)
         let fileIcon = FileIcons.icon(for: task.name, size: 32)
         if icon.image !== fileIcon { icon.image = fileIcon }
@@ -284,7 +284,7 @@ final class ListCellView: NSTableCellView {
         let showsBar = task.status != .complete && (task.progress > 0 || task.status == .downloading)
         if bar.isHidden == showsBar { bar.isHidden = !showsBar }
 
-        let (symbol, label): (String, String) = switch task.status {
+        let (symbol, label): (String, String) = switch task.shownStatus {
         case .downloading, .queued: ("pause.circle.fill", "Pause")
         case .paused: ("play.circle.fill", "Resume")
         case .failed: ("arrow.clockwise.circle.fill", "Retry")
