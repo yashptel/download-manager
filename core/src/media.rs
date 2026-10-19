@@ -7,6 +7,10 @@
 //! `media-video` and `media-audio` set. Track IDs come from the playlist
 //! URLs, which some servers (YouTube) sign afresh on every request, so the
 //! extension sends the same playlist text (`media-input`) with both.
+//!
+//! A collection is a video file and an audio file the engine joins into one,
+//! for sites whose videos come as separate files (YouTube, when yt-dlp has no
+//! playlist for it). Its files also travel as `media-input`, one track each.
 
 use crate::engine::random_hex;
 use crate::rpc::Rpc;
@@ -18,6 +22,59 @@ use std::time::{Duration, Instant};
 /// list skips them.
 const PROBE_PREFIX: &str = "0bd0be";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+/// YouTube serves a whole file, or any piece above 10 MiB, at a crawl, and a
+/// piece this size at full speed; yt-dlp downloads in the same pieces.
+const PIECE: u64 = 10 * 1024 * 1024;
+const MAX_URL: usize = 16384;
+
+/// The files of a collection as the extension sends them, `[{ type, url,
+/// size }]`, kept as one file per type with an http(s) URL; None when there
+/// is nothing the engine could join.
+pub fn collection_files(text: &str) -> Option<String> {
+    let files: Vec<Value> = serde_json::from_str(text).ok()?;
+    let mut kept: Vec<Value> = Vec::new();
+    for file in files {
+        let Some(kind) = file["type"].as_str().filter(|kind| ["video", "audio"].contains(kind)) else { continue };
+        let Some(url) = file["url"].as_str() else { continue };
+        let plain = url.len() <= MAX_URL
+            && (url.starts_with("http://") || url.starts_with("https://"))
+            && !url.chars().any(|c| c.is_whitespace() || c.is_control());
+        if !plain || kept.iter().any(|f| f["type"] == kind) {
+            continue;
+        }
+        kept.push(json!({ "type": kind, "url": url, "size": file["size"].as_u64() }));
+    }
+    (!kept.is_empty()).then(|| Value::Array(kept).to_string())
+}
+
+/// The engine's `media-input` for a collection: each file one track, named
+/// after its type, as the quality menu's choices are.
+pub fn collection_input(files: &str) -> Value {
+    let files: Vec<Value> = serde_json::from_str(files).unwrap_or_default();
+    let tracks: Vec<Value> = files
+        .iter()
+        .map(|file| {
+            let url = file["url"].as_str().unwrap_or("");
+            json!({ "id": file["type"], "type": file["type"], "urls": pieces(url, file["size"].as_u64().unwrap_or(0)) })
+        })
+        .collect();
+    json!({ "manifests": [], "tracks": tracks, "keys": [] })
+}
+
+/// A file's URLs for the engine, which joins them into one byte stream.
+/// YouTube's servers take a piece as a `range=` query parameter.
+fn pieces(url: &str, size: u64) -> Vec<String> {
+    let host = url.split('/').nth(2).unwrap_or("").rsplit('@').next().unwrap_or("").split(':').next().unwrap_or("");
+    let youtube = host == "googlevideo.com" || host.ends_with(".googlevideo.com");
+    if !youtube || size == 0 {
+        return vec![url.to_string()];
+    }
+    let separator = if url.contains('?') { '&' } else { '?' };
+    (0..size)
+        .step_by(PIECE as usize)
+        .map(|start| format!("{url}{separator}range={start}-{}", (start + PIECE).min(size) - 1))
+        .collect()
+}
 
 pub fn is_probe(gid: &str) -> bool {
     gid.starts_with(PROBE_PREFIX)

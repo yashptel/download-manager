@@ -605,12 +605,16 @@ impl NewDownload {
         put("media-video", &self.media_video);
         put("media-audio", &self.media_audio);
         put("media-format", &self.media_format);
-        if let Some(content) = self.media_manifest.as_deref().filter(|c| !c.is_empty()) {
-            let input = json!({
+        let input = match (self.media_kind.as_deref(), self.media_manifest.as_deref().filter(|c| !c.is_empty())) {
+            (Some("collection"), Some(files)) => Some(crate::media::collection_input(files)),
+            (Some(_), Some(content)) => Some(json!({
                 "manifests": [{ "url": self.url.trim(), "content": content }],
                 "tracks": [],
                 "keys": [],
-            });
+            })),
+            _ => None,
+        };
+        if let Some(input) = input {
             options.insert("media-input".into(), json!(input.to_string()));
         }
     }

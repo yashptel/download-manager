@@ -591,12 +591,15 @@ function showCount(tabId) {
 }
 
 /** A file name from the page title, which the engine treats as a weak hint.
- * For a stream it is only the name: the engine adds the container's extension. */
-function titleName(title, kind) {
+ * Without an extension it is only the name: the engine adds the container's. */
+function titleName(title, extension) {
   const name = (title || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
   if (!name) return undefined;
-  return kind === "HLS" || kind === "DASH" ? name : name + "." + kind.toLowerCase();
+  return extension ? name + "." + extension : name;
 }
+
+/** "hls", "dash", "collection" (files the engine joins) or undefined for a plain file. */
+const mediaKindOf = (entry) => (isStream(entry) ? entry.kind.toLowerCase() : entry.site?.files ? "collection" : undefined);
 
 /** What the app needs to fetch this find again, as the page did. */
 async function mediaItem(tab, entry) {
@@ -608,11 +611,15 @@ async function mediaItem(tab, entry) {
   const headers = entry.site
     ? seen
     : seen.filter((h) => ["origin", "authorization"].includes(h.name.toLowerCase()) || /^x-/i.test(h.name));
-  const filename = titleName(entry.site?.title || tab?.title, entry.kind);
-  const stream = isStream(entry)
-    ? { mediaKind: entry.kind.toLowerCase(), mediaManifest: await manifestText(entry) }
-    : {};
-  return { ...item, headers, filename, filenameSource: filename ? "title" : undefined, ...stream };
+  const kind = mediaKindOf(entry);
+  const filename = titleName(entry.site?.title || tab?.title, kind ? undefined : entry.kind.toLowerCase());
+  const media =
+    kind === "collection"
+      ? { mediaKind: kind, mediaManifest: JSON.stringify(entry.site.files) }
+      : kind
+        ? { mediaKind: kind, mediaManifest: await manifestText(entry) }
+        : {};
+  return { ...item, headers, filename, filenameSource: filename ? "title" : undefined, ...media };
 }
 
 /** The stream's playlist, fetched once and then always the same text.
@@ -693,9 +700,15 @@ function siteLookup(tab, url) {
 }
 
 const hasCodec = (codec) => Boolean(codec) && codec !== "none";
+const CODEC_ORDER = ["H.264", "VP9", "AV1"]; // What plays in most places first.
 
-/** Adds yt-dlp's playlists and files to the tab's finds. */
-function addSiteVideo(tabId, video) {
+/** Adds yt-dlp's playlists and files for a page to the tab's finds.
+ *
+ * With a playlist, the qualities come from it, and only complete files (sound
+ * included) add anything. Without one (YouTube seen through a signed-in
+ * browser gives yt-dlp separate video and audio files), each picture quality
+ * is a video file the engine joins with the video's own soundtrack. */
+function addSiteVideo(tabId, video, page) {
   const title = video.title || "";
   // What yt-dlp knows about each picture size: exact file sizes (a stream's
   // playlist only states peak bitrates) and frame rates.
@@ -706,33 +719,69 @@ function addSiteVideo(tabId, video) {
   }
   const audioSize = Math.max(0, ...video.files.filter((f) => !hasCodec(f.vcodec) && f.ext === "m4a").map((f) => f.size ?? 0));
   for (const stream of video.streams) {
-    const site = { title, headers: stream.headers, known, audioSize, language: video.language || "" };
+    const site = { page, title, headers: stream.headers, known, audioSize, language: video.language || "" };
     addMedia(tabId, { url: stream.url, kind: stream.kind.toUpperCase(), loaded: true, site });
   }
   // "-drc" files are the same audio with its loudness evened out.
-  const files = video.files.filter((file) => !String(file.id).endsWith("-drc") && file.ext);
-  const muxed = files.filter((f) => hasCodec(f.vcodec) === hasCodec(f.acodec) && !(f.vcodec === "none" && f.acodec === "none"));
-  const audio = files.filter((f) => !hasCodec(f.vcodec) && hasCodec(f.acodec));
-  // A video file without sound needs its audio muxed in, which the engine
-  // only does for playlists; offered only when nothing better exists.
-  const silent = video.streams.length || muxed.length ? [] : files.filter((f) => hasCodec(f.vcodec) && f.acodec === "none");
-  const bestAudio = Object.values(Object.groupBy(audio, (f) => f.ext)).map((list) => list.sort((a, b) => (b.tbr ?? 0) - (a.tbr ?? 0))[0]);
-  const add = (file, group, label, detail) =>
+  const files = video.files.filter((file) => !String(file.id).endsWith("-drc") && file.ext && /^https?:/i.test(file.url || ""));
+  const pictures = files.filter((f) => hasCodec(f.vcodec));
+  // The soundtracks, the video's own language first, then the best of each.
+  const audios = files
+    .filter((f) => !hasCodec(f.vcodec) && hasCodec(f.acodec))
+    .sort((a, b) => (b.preference ?? 0) - (a.preference ?? 0) || (b.tbr ?? 0) - (a.tbr ?? 0) || (b.ext === "m4a") - (a.ext === "m4a"));
+  const soundtrack = audios[0];
+  const add = (file, group, label, detail, extra = {}) =>
     addMedia(tabId, {
       url: file.url,
       kind: file.ext.toUpperCase(),
-      size: file.size ?? 0,
+      size: extra.size ?? file.size ?? 0,
       loaded: true,
-      site: { title, headers: file.headers, group, label, detail, height: file.height ?? 0 },
+      site: { page, title, headers: file.headers, group, label, detail, height: file.height ?? 0, ...extra },
     });
   const quality = (f) => (f.height ? qualityName(f.width, f.height) + (f.fps > 31 ? Math.round(f.fps) : "") : f.ext.toUpperCase());
-  for (const f of [...muxed, ...silent]) {
-    const detail = [f.ext.toUpperCase(), codecName(f.vcodec || "", "video"), formatSize(f.size)].filter(Boolean).join(" · ");
-    add(f, muxed.includes(f) ? "Video" : "Video (no sound)", quality(f), detail);
+  const codecRank = (f) => {
+    const rank = CODEC_ORDER.indexOf(codecName(f.vcodec, "video"));
+    return rank < 0 ? CODEC_ORDER.length : rank;
+  };
+  // One entry per picture quality: a complete file over one needing sound,
+  // then the codec that plays in most places.
+  const seen = new Set();
+  for (const f of pictures.sort(
+    (a, b) =>
+      (b.height ?? 0) * (b.width ?? 0) - (a.height ?? 0) * (a.width ?? 0) ||
+      hasCodec(b.acodec) - hasCodec(a.acodec) ||
+      codecRank(a) - codecRank(b) ||
+      (b.fps ?? 0) - (a.fps ?? 0) ||
+      (b.tbr ?? 0) - (a.tbr ?? 0),
+  )) {
+    const complete = hasCodec(f.acodec);
+    if (!complete && video.streams.length) continue;
+    const label = quality(f);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    const codec = codecName(f.vcodec, "video");
+    if (complete) {
+      add(f, "Video", label, [f.ext.toUpperCase(), codec, formatSize(f.size)].filter(Boolean).join(" · "));
+      continue;
+    }
+    // The engine joins the picture with the soundtrack into one file.
+    const sound = soundtrack ? [{ type: "audio", url: soundtrack.url, size: soundtrack.size ?? 0 }] : [];
+    const format = containerFor(f.vcodec + "," + (soundtrack?.acodec ?? ""));
+    const size = (f.size ?? 0) + (soundtrack?.size ?? 0);
+    const detail = [format.toUpperCase(), codec, formatSize(size)].filter(Boolean).join(" · ");
+    const choice = { url: f.url, video: "video", audio: sound.length ? "audio" : "none", format, quality: label + " · " + detail };
+    add(f, sound.length ? "Video" : "Video (no sound)", label, detail, { size, files: [{ type: "video", url: f.url, size: f.size ?? 0 }, ...sound], choice });
   }
-  for (const f of bestAudio) {
-    const detail = [f.tbr ? Math.round(f.tbr) + " kbps" : "", codecName(f.acodec, "audio"), formatSize(f.size)].filter(Boolean).join(" · ");
-    add(f, "Audio only", f.ext.toUpperCase(), detail);
+  // Audio on its own, the best of each language; a playlist already has it.
+  if (video.streams.length) return;
+  const heard = new Set();
+  for (const f of audios) {
+    const language = f.language || "";
+    if (heard.has(language)) continue;
+    heard.add(language);
+    const original = f === soundtrack && audios.some((other) => (other.language || "") !== language);
+    const detail = [original ? "Original" : "", f.tbr ? Math.round(f.tbr) + " kbps" : "", codecName(f.acodec, "audio"), formatSize(f.size)].filter(Boolean).join(" · ");
+    add(f, "Audio only", language || "Audio", detail);
   }
 }
 
@@ -871,27 +920,35 @@ async function formats(tabId, src, page) {
   if (mediaBlocked(page || tab?.url || "")) {
     return { title: tab?.title ?? "", groups: [], note: "This version of OpenDM Connect does not download videos from this site." };
   }
+  const pageUrl = page || tab?.url || "";
+  // yt-dlp's finds for other pages (videos hovered on this one) stay out.
+  const forPage = (entry) => !entry.site || entry.site.page === pageUrl;
   // yt-dlp first, since it adds finds. With finds from the page already in
   // hand, a slow answer is not worth waiting long for.
-  const ownFinds = visibleMedia(tabId).length > 0;
+  const ownFinds = visibleMedia(tabId).some(forPage);
   let siteNote = "";
-  const site = siteLookup(tab, page || tab?.url || "").catch((error) => {
+  const site = siteLookup(tab, pageUrl).catch((error) => {
     siteNote = error.message;
     return [];
   });
   const videos = await Promise.race([site, new Promise((resolve) => setTimeout(() => resolve([]), ownFinds ? 4000 : 120_000))]);
-  for (const video of videos) addSiteVideo(tabId, video);
+  // A fresh answer replaces the page's earlier one: its URLs are signed anew.
+  if (videos.length) {
+    const fresh = new Set(videos.flatMap((video) => [...video.streams, ...video.files].map((f) => f.url)));
+    media.set(tabId, (media.get(tabId) ?? []).filter((entry) => !entry.site || entry.site.page !== pageUrl || fresh.has(entry.url)));
+  }
+  for (const video of videos) addSiteVideo(tabId, video, pageUrl);
 
-  const list = [...visibleMedia(tabId)].reverse(); // Newest first.
+  const list = visibleMedia(tabId).filter(forPage).reverse(); // Newest first.
   if (src && /^https?:/i.test(src) && !list.some((entry) => entry.url === src)) {
     const kind = mediaKind(src, "") || "MP4";
     addMedia(tabId, { url: src, kind, loaded: true });
     list.unshift(media.get(tabId).find((entry) => entry.url === src));
   }
-  const files = list
-    .filter((entry) => !isStream(entry))
-    .sort((a, b) => Boolean(b.site) - Boolean(a.site) || (b.url === src) - (a.url === src) || (b.site?.height ?? 0) - (a.site?.height ?? 0) || b.size - a.size)
-    .slice(0, 12);
+  // yt-dlp's files come in menu order already; the page's own finds are capped.
+  const siteFiles = list.filter((entry) => !isStream(entry) && entry.site).reverse();
+  const pageFiles = list.filter((entry) => !isStream(entry) && !entry.site).sort((a, b) => (b.url === src) - (a.url === src) || b.size - a.size);
+  const files = [...siteFiles, ...pageFiles.slice(0, 12)];
 
   const probe = (entries) =>
     Promise.all(
@@ -905,7 +962,7 @@ async function formats(tabId, src, page) {
     );
   // The streams the player loaded come first. When none of them can be read
   // (often DRM on the top qualities only), the page may name others that can.
-  const streams = [...(media.get(tabId) ?? [])].reverse().filter((entry) => isStream(entry) && !entry.variant);
+  const streams = [...(media.get(tabId) ?? [])].reverse().filter((entry) => isStream(entry) && !entry.variant && forPage(entry));
   let probed = await probe(streams.filter((entry) => entry.loaded));
   if (!probed.some((p) => p.answer.result === "ready")) {
     probed = [...probed, ...(await probe(streams.filter((entry) => !entry.loaded)))];
@@ -938,7 +995,7 @@ async function formats(tabId, src, page) {
   }
   for (const entry of files) {
     const option = entry.site
-      ? { label: entry.site.label, detail: entry.site.detail, choice: { url: entry.url } }
+      ? { label: entry.site.label, detail: entry.site.detail, choice: entry.site.choice ?? { url: entry.url } }
       : { label: entry.kind, detail: [formatSize(entry.size), streamName(entry.url)].filter(Boolean).join(" · "), choice: { url: entry.url } };
     addTo(entry.site?.group ?? "Files", [option]);
   }
@@ -952,7 +1009,7 @@ async function downloadChoice(tabId, choice) {
   if (!entry) throw new Error("That video is gone; reload the page");
   const tab = await api.tabs.get(tabId).catch(() => null);
   const item = await mediaItem(tab, entry);
-  if (isStream(entry)) {
+  if (mediaKindOf(entry)) {
     Object.assign(item, { mediaVideo: choice.video, mediaAudio: choice.audio, mediaFormat: choice.format, mediaQuality: choice.quality });
   }
   await handOver("media", [item]);

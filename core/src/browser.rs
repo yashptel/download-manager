@@ -425,7 +425,15 @@ fn parse_item(item: &Value) -> Option<NewDownload> {
                     .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         })
     };
-    let media_kind = text("mediaKind").filter(|kind| kind == "hls" || kind == "dash");
+    let media_kind = text("mediaKind").filter(|kind| ["hls", "dash", "collection"].contains(&kind.as_str()));
+    let media_manifest = match media_kind.as_deref() {
+        Some("collection") => Some(crate::media::collection_files(item["mediaManifest"].as_str()?)?),
+        Some(_) => item["mediaManifest"]
+            .as_str()
+            .filter(|content| !content.is_empty() && content.len() <= MAX_MANIFEST)
+            .map(String::from),
+        None => None,
+    };
     // Only a plain proxy address: no login, nothing the engine would read as
     // another option.
     let proxy = text("proxy").filter(|proxy| {
@@ -447,11 +455,7 @@ fn parse_item(item: &Value) -> Option<NewDownload> {
         dir: None,
         mime: text("mime"),
         size: item["size"].as_u64().filter(|size| *size > 0),
-        media_manifest: media_kind
-            .as_ref()
-            .and(item["mediaManifest"].as_str())
-            .filter(|content| !content.is_empty() && content.len() <= MAX_MANIFEST)
-            .map(String::from),
+        media_manifest,
         media_kind,
         media_video: track("mediaVideo"),
         media_audio: track("mediaAudio"),

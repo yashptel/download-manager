@@ -119,11 +119,13 @@ pub struct NewDownload {
     #[uniffi(default = None)]
     pub size: Option<u64>,
     /// "hls" or "dash" when this is a stream, so the engine reads it as one
-    /// whatever its URL looks like.
+    /// whatever its URL looks like; "collection" when it is a video file and
+    /// an audio file the engine joins into one (YouTube's separate files).
     #[uniffi(default = None)]
     pub media_kind: Option<String>,
     /// The playlist as the page received it, used instead of fetching the
-    /// URL again (pages that build or sign their playlists in script).
+    /// URL again (pages that build or sign their playlists in script). For a
+    /// collection, its files: JSON [{ type, url, size }].
     #[uniffi(default = None)]
     pub media_manifest: Option<String>,
     /// The stream's video and audio track: "best", "none" or a track ID

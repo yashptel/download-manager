@@ -149,6 +149,8 @@ fn video(info: &Value) -> Value {
                 "tbr": format["tbr"],
                 "size": format["filesize"].as_u64().or(format["filesize_approx"].as_u64()),
                 "language": format["language"],
+                // The video's own language ranks highest; dubbed ones rank below.
+                "preference": format["language_preference"],
                 "headers": headers,
             }));
         }
