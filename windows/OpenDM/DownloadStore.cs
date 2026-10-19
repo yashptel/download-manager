@@ -23,9 +23,11 @@ internal sealed class DownloadStore
         if (TimingPath is not null)
         {
             TimeSpan? last = null;
-            CompositionTarget.Rendering += (_, args) =>
+            // Timed here rather than read from RenderingEventArgs, whose cast
+            // fails under Native AOT.
+            CompositionTarget.Rendering += (_, _) =>
             {
-                var now = ((RenderingEventArgs)args).RenderingTime;
+                var now = Stopwatch.GetElapsedTime(0);
                 if (last is { } previous && (now - previous).TotalMilliseconds > 20)
                 {
                     File.AppendAllText(TimingPath, $"-1,{(now - previous).TotalMilliseconds:F1}\n");
