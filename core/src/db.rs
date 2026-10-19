@@ -8,7 +8,7 @@ use crate::{TaskRow, TaskStatus};
 use rusqlite::{Connection, params};
 use std::path::Path;
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA: &str = "
 CREATE TABLE downloads (
@@ -28,7 +28,8 @@ CREATE TABLE downloads (
     media       INTEGER NOT NULL,
     move_dir    TEXT,
     move_name   TEXT,
-    page        TEXT
+    page        TEXT,
+    retry_at    INTEGER
 );
 CREATE INDEX downloads_added_at ON downloads(added_at);
 ";
@@ -53,17 +54,19 @@ impl Db {
                 ))
                 .map_err(|error| error.to_string())?,
             // 2 adds the folder and name a running download moves to when
-            // done; 3 the page it came from.
-            1 | 2 => conn
-                .execute_batch(&format!(
-                    "BEGIN; {} ALTER TABLE downloads ADD COLUMN page TEXT; PRAGMA user_version = 3; COMMIT;",
-                    if version == 1 {
-                        "ALTER TABLE downloads ADD COLUMN move_dir TEXT; ALTER TABLE downloads ADD COLUMN move_name TEXT;"
-                    } else {
-                        ""
-                    }
-                ))
-                .map_err(|error| error.to_string())?,
+            // done; 3 the page it came from; 4 when a failed one is tried again.
+            1..=3 => {
+                let mut steps = String::new();
+                if version < 2 {
+                    steps += "ALTER TABLE downloads ADD COLUMN move_dir TEXT; ALTER TABLE downloads ADD COLUMN move_name TEXT;";
+                }
+                if version < 3 {
+                    steps += "ALTER TABLE downloads ADD COLUMN page TEXT;";
+                }
+                steps += "ALTER TABLE downloads ADD COLUMN retry_at INTEGER;";
+                conn.execute_batch(&format!("BEGIN; {steps} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"))
+                    .map_err(|error| error.to_string())?
+            }
             SCHEMA_VERSION => {}
             newer => {
                 return Err(format!(
@@ -79,7 +82,7 @@ impl Db {
             .conn
             .prepare(
                 "SELECT id, url, name, dir, path, category, status, total_bytes, done_bytes, error,
-                        added_at, finished_at, files, media, move_dir, move_name, page
+                        added_at, finished_at, files, media, move_dir, move_name, page, retry_at
                  FROM downloads ORDER BY added_at, id",
             )
             .map_err(|error| error.to_string())?;
@@ -106,7 +109,7 @@ impl Db {
                     connections: 0,
                     // Older rows hold the engine's own wording.
                     error: row.get::<_, Option<String>>(9)?.map(|error| crate::tasks::friendly_error(&error)),
-                    retry_at: None,
+                    retry_at: row.get(17)?,
                     added_at: row.get(10)?,
                     finished_at: row.get(11)?,
                 };
@@ -137,8 +140,8 @@ impl Db {
                 .prepare_cached(
                     "INSERT OR REPLACE INTO downloads
                      (id, url, name, dir, path, category, status, total_bytes, done_bytes, error,
-                      added_at, finished_at, files, media, move_dir, move_name, page)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                      added_at, finished_at, files, media, move_dir, move_name, page, retry_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 )
                 .map_err(|error| error.to_string())?;
             for task in tasks {
@@ -162,6 +165,7 @@ impl Db {
                         task.move_dir,
                         task.move_name,
                         task.page,
+                        row.retry_at,
                     ])
                     .map_err(|error| error.to_string())?;
             }
@@ -253,7 +257,7 @@ mod tests {
     fn opens_a_first_release_history_and_keeps_its_rows() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("history.db");
-        let v1 = SCHEMA.replace(",\n    move_dir    TEXT,\n    move_name   TEXT,\n    page        TEXT", "");
+        let v1 = SCHEMA.replace(",\n    move_dir    TEXT,\n    move_name   TEXT,\n    page        TEXT,\n    retry_at    INTEGER", "");
         assert!(!v1.contains("move_dir"));
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(&format!("{v1} PRAGMA user_version = 1;")).unwrap();

@@ -375,6 +375,8 @@ impl DownloadCore {
         self.runtime.spawn(tasks::run_poller(self.shared.clone()));
         self.runtime.spawn(browser::serve(self.shared.clone()));
         self.runtime.spawn(schedule::run(self.shared.clone()));
+        let shared = self.shared.clone();
+        self.runtime.spawn(async move { tasks::resume_retries(&shared) });
     }
 
     /// Saves progress and stops the engine. Blocks for at most a few seconds.

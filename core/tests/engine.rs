@@ -23,6 +23,8 @@ static FLAKY: AtomicBool = AtomicBool::new(true);
 static OUTAGE: AtomicBool = AtomicBool::new(true);
 /// Like OUTAGE, for /blocked/.
 static BLOCKED: AtomicBool = AtomicBool::new(true);
+/// Like OUTAGE, for /down/.
+static DOWN: AtomicBool = AtomicBool::new(true);
 
 fn engine_path() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("OPENDM_TEST_ENGINE") {
@@ -134,6 +136,9 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
         }
         if line.contains(" /blocked/") {
             flaky = BLOCKED.load(Ordering::SeqCst);
+        }
+        if line.contains(" /down/") {
+            flaky = DOWN.load(Ordering::SeqCst);
         }
         // An address that has expired partway through.
         if line.contains(" /expires/") {
@@ -401,6 +406,7 @@ fn a_download_that_failed_partway_continues_into_a_correct_file() {
     let mut settings = core.settings();
     settings.max_tries = 1;
     settings.retry_wait = 0;
+    settings.auto_retries = 0;
     core.set_settings(settings).unwrap();
     core.start();
     wait_until("engine start", Duration::from_secs(15), || {
@@ -415,6 +421,8 @@ fn a_download_that_failed_partway_continues_into_a_correct_file() {
     });
     let failed = row(&core, &id).unwrap();
     assert!(failed.done_bytes > 0 && failed.done_bytes < FILE_SIZE, "{failed:?}");
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(row(&core, &id).unwrap().retry_at, None, "no tries of its own with the setting at 0");
     let kept = recorded(&temp.path().join("data"), &id);
     assert!(kept > 0);
 
@@ -530,6 +538,52 @@ fn a_download_waiting_to_retry_can_be_paused_and_resumed() {
         row.status == TaskStatus::Complete
     });
     assert!(least >= kept, "went back from {kept} to {least} bytes");
+    let bytes = std::fs::read(row(&core, &id).unwrap().path.unwrap()).unwrap();
+    assert_eq!(bytes.len() as u64, FILE_SIZE);
+    let first_wrong = bytes.iter().enumerate().position(|(index, byte)| *byte != byte_at(index as u64));
+    assert_eq!(first_wrong, None, "the file should be correct throughout");
+    core.shutdown();
+}
+
+#[test]
+fn a_retry_that_was_waiting_happens_after_a_restart() {
+    let Some(engine) = engine_path() else {
+        eprintln!("skipped: no aria2-next binary (run scripts/fetch-engine.sh)");
+        return;
+    };
+    let port = serve();
+    let temp = tempfile::tempdir().unwrap();
+    let data = temp.path().join("data");
+    let downloads = temp.path().join("downloads");
+    let core = open(&engine, &data, &downloads, Arc::new(Recorder::default()));
+    let mut settings = core.settings();
+    settings.max_tries = 1;
+    settings.retry_wait = 0;
+    core.set_settings(settings).unwrap();
+    core.start();
+    wait_until("engine start", Duration::from_secs(15), || {
+        core.engine_state() == EngineState::Running
+    });
+    let id = core.add_downloads(
+        vec![NewDownload { url: format!("http://127.0.0.1:{port}/down/big.bin"), ..NewDownload::default() }],
+        false,
+    )[0]
+    .clone();
+    wait_until("the failure", Duration::from_secs(30), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Failed && row.retry_at.is_some())
+    });
+    let at = row(&core, &id).unwrap().retry_at;
+    core.shutdown();
+    drop(core);
+
+    // The next run knows when to try, and does.
+    let core = open(&engine, &data, &downloads, Arc::new(Recorder::default()));
+    assert_eq!(row(&core, &id).unwrap().retry_at, at);
+    DOWN.store(false, Ordering::SeqCst);
+    core.start();
+    wait_until("completion after the restart", Duration::from_secs(90), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Complete)
+    });
     let bytes = std::fs::read(row(&core, &id).unwrap().path.unwrap()).unwrap();
     assert_eq!(bytes.len() as u64, FILE_SIZE);
     let first_wrong = bytes.iter().enumerate().position(|(index, byte)| *byte != byte_at(index as u64));

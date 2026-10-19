@@ -33,8 +33,6 @@ const RETRY_WAITS: [Duration; 5] = [
     Duration::from_secs(300),
     Duration::from_secs(600),
 ];
-/// Tries in a row that get no further before a download stays failed.
-const MAX_RETRIES: u32 = 10;
 /// Adds are sent in batches so a paste of thousands of links stays one
 /// round trip per batch.
 const ADD_BATCH: usize = 500;
@@ -1303,26 +1301,45 @@ fn is_temporary(status: &Value) -> bool {
 }
 
 /// Sets when a download that failed partway is tried again, or leaves it
-/// failed after MAX_RETRIES tries that got no further.
+/// failed after the settings' tries that got no further. Saved, so the
+/// try survives a restart.
 fn schedule_retry(shared: &Shared, id: &str) -> Option<(i64, Duration)> {
-    let (row, at, wait) = {
+    let limit = shared.settings.lock().unwrap().auto_retries;
+    let (task, at, wait) = {
         let mut table = shared.tasks.lock().unwrap();
         let task = table.tasks.get_mut(id)?;
         if task.row.done_bytes > task.retried_from {
             task.retries = 0;
             task.retried_from = task.row.done_bytes;
         }
-        if task.retries >= MAX_RETRIES {
+        if task.retries >= limit {
             return None;
         }
         let wait = RETRY_WAITS[(task.retries as usize).min(RETRY_WAITS.len() - 1)];
         task.retries += 1;
         let at = now_ms() + wait.as_millis() as i64;
         task.row.retry_at = Some(at);
-        (task.row.clone(), at, wait)
+        (task.clone(), at, wait)
     };
-    shared.listener.rows_changed(vec![row]);
+    if let Err(error) = shared.db.lock().unwrap().save(std::slice::from_ref(&task)) {
+        shared.listener.error(format!("Could not save download history: {error}"));
+    }
+    shared.listener.rows_changed(vec![task.row]);
     Some((at, wait))
+}
+
+/// After a restart: tries again the downloads that were waiting to, when
+/// their time comes, and not before the engine has had a moment to start.
+pub fn resume_retries(shared: &Arc<Shared>) {
+    let now = now_ms();
+    let waiting: Vec<(String, i64)> = {
+        let table = shared.tasks.lock().unwrap();
+        table.tasks.values().filter_map(|task| Some((task.row.id.clone(), task.row.retry_at?))).collect()
+    };
+    for (id, at) in waiting {
+        let wait = Duration::from_millis((at - now).max(10_000) as u64);
+        tokio::spawn(retry_later(shared.clone(), id, at, wait));
+    }
 }
 
 /// Tries a download again when its time comes, keeping what is on disk,

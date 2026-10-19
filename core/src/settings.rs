@@ -48,6 +48,9 @@ pub struct Settings {
     pub max_tries: u32,
     /// Seconds between attempts.
     pub retry_wait: u32,
+    /// Times a download that failed partway is tried again on its own,
+    /// minutes apart, without getting further; 0 never.
+    pub auto_retries: u32,
     /// Seconds without data before a connection is retried.
     pub timeout: u32,
     pub connect_timeout: u32,
@@ -134,6 +137,7 @@ impl Default for Settings {
             max_task_speed: 0,
             max_tries: 5,
             retry_wait: 5,
+            auto_retries: 10,
             timeout: 60,
             connect_timeout: 30,
             proxy: String::new(),
