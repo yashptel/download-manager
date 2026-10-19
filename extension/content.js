@@ -204,6 +204,32 @@
     button.querySelector("span").textContent = text;
   }
 
+  const PLAYLIST = /(^|\/)[^/?#]*\.(m3u8|mpd)(?:[?#]|$)/i;
+
+  /** The playlist a player names in its own markup, as a <source> or an
+   * attribute of the video, its shadow host or a near ancestor (Reddit's
+   * player puts its HLS playlist in src). A player feeding the video through
+   * MediaSource leaves it with only a blob: URL, so this is what ties the
+   * video on screen to one of the playlists the page loaded. */
+  function manifestFor(video) {
+    const named = (element) => {
+      for (const { value } of element.attributes) {
+        if (PLAYLIST.test(value) && URL.canParse(value, location.href)) {
+          const url = new URL(value, location.href);
+          if (/^https?:$/.test(url.protocol)) return url.href;
+        }
+      }
+      return "";
+    };
+    let node = video;
+    for (let depth = 0; node && depth < 8; depth++) {
+      const found = named(node) || (node === video ? [...video.querySelectorAll("source")].map(named).find(Boolean) : "");
+      if (found) return found;
+      node = node.parentElement ?? node.getRootNode()?.host ?? null;
+    }
+    return "";
+  }
+
   /** The page a video previews: feeds play previews of other pages over
    * their links (YouTube's home page), and those pages are what to look up. */
   function linkFor(video) {
@@ -233,7 +259,7 @@
     if (busy || !current) return;
     busy = true;
     label("Finding qualities…");
-    const answer = await send({ type: "formats", src: current.currentSrc || current.src || "", link: linkFor(current) });
+    const answer = await send({ type: "formats", src: current.currentSrc || current.src || "", manifest: manifestFor(current), link: linkFor(current) });
     busy = false;
     label("Download video");
     if (!answer?.ok) return flash(answer?.error || "OpenDM is not available", 3500);

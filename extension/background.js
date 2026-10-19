@@ -914,8 +914,9 @@ function streamGroups(entry, presentation) {
 }
 
 /** Everything the tab's video menu offers. src is the hovered video's own
- * URL; page is the page to ask yt-dlp about when it is not the tab's. */
-async function formats(tabId, src, page) {
+ * URL and manifest the playlist its player names, when it does; page is the
+ * page to ask yt-dlp about when it is not the tab's. */
+async function formats(tabId, src, page, manifest = "") {
   const tab = await api.tabs.get(tabId).catch(() => null);
   if (mediaBlocked(page || tab?.url || "")) {
     return { title: tab?.title ?? "", groups: [], note: "This version of OpenDM Connect does not download videos from this site." };
@@ -945,9 +946,17 @@ async function formats(tabId, src, page) {
     addMedia(tabId, { url: src, kind, loaded: true });
     list.unshift(media.get(tabId).find((entry) => entry.url === src));
   }
+  // A player that names its playlist gets a menu for that video alone; the
+  // tab's other finds belong to other videos on the page.
+  const own = manifest && /^https?:/i.test(manifest) && mediaKind(manifest, "") ? manifest : "";
+  if (own && !(media.get(tabId) ?? []).some((entry) => entry.url === own)) {
+    addMedia(tabId, { url: own, kind: mediaKind(own, ""), loaded: true });
+  }
   // yt-dlp's files come in menu order already; the page's own finds are capped.
   const siteFiles = list.filter((entry) => !isStream(entry) && entry.site).reverse();
-  const pageFiles = list.filter((entry) => !isStream(entry) && !entry.site).sort((a, b) => (b.url === src) - (a.url === src) || b.size - a.size);
+  const pageFiles = list
+    .filter((entry) => !isStream(entry) && !entry.site && (!own || entry.url === src))
+    .sort((a, b) => (b.url === src) - (a.url === src) || b.size - a.size);
   const files = [...siteFiles, ...pageFiles.slice(0, 12)];
 
   const probe = (entries) =>
@@ -962,7 +971,9 @@ async function formats(tabId, src, page) {
     );
   // The streams the player loaded come first. When none of them can be read
   // (often DRM on the top qualities only), the page may name others that can.
-  const streams = [...(media.get(tabId) ?? [])].reverse().filter((entry) => isStream(entry) && !entry.variant && forPage(entry));
+  const streams = [...(media.get(tabId) ?? [])]
+    .reverse()
+    .filter((entry) => isStream(entry) && !entry.variant && forPage(entry) && (!own || entry.url === own));
   let probed = await probe(streams.filter((entry) => entry.loaded));
   if (!probed.some((p) => p.answer.result === "ready")) {
     probed = [...probed, ...(await probe(streams.filter((entry) => !entry.loaded)))];
@@ -1051,7 +1062,7 @@ async function onMessage(message, sender) {
     case "formats": {
       // The popup names the tab; the page's own menu is in sender.tab.
       const tabId = message.tabId ?? sender.tab?.id;
-      return { ok: true, ...(await formats(tabId, message.src, videoPage(message, sender))) };
+      return { ok: true, ...(await formats(tabId, message.src, videoPage(message, sender), typeof message.manifest === "string" ? message.manifest : "")) };
     }
     case "prefetch":
       // Hovering a video: look the page up before the click, if OpenDM runs.
