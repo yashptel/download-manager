@@ -10,6 +10,7 @@ public partial class App : Application
     private DownloadCore? core;
     private MainWindow? window;
     private TrayIcon? tray;
+    private DispatcherQueueTimer? updateTimer;
 
     public App()
     {
@@ -43,6 +44,25 @@ public partial class App : Application
         if (!Environment.GetCommandLineArgs().Contains("--background"))
         {
             window.ShowAndActivate();
+        }
+        updateTimer = dispatcher.CreateTimer();
+        updateTimer.Interval = TimeSpan.FromDays(1);
+        updateTimer.Tick += (_, _) => _ = CheckForUpdate();
+        updateTimer.Start();
+        _ = CheckForUpdate();
+    }
+
+    /// <summary>At launch and once a day: a newer release shows in the main window.</summary>
+    private async Task CheckForUpdate()
+    {
+        if (!Updates.Automatic) return;
+        try
+        {
+            if (await Updates.CheckAsync() is { } release) window?.ShowUpdate(release);
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or KeyNotFoundException)
+        {
+            // Offline, or nothing published yet: the next check tries again.
         }
     }
 

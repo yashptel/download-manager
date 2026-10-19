@@ -75,6 +75,9 @@ public sealed partial class SettingsWindow : Window
         Switch(ConfirmSwitch, settings.ConfirmDownloads, (s, on) => s with { ConfirmDownloads = on });
         Switch(ProgressSwitch, settings.ShowProgressWindow, (s, on) => s with { ShowProgressWindow = on });
         StartupSwitch.IsOn = StartAtSignIn.IsOn;
+        VersionText.Text = $"OpenDM {Updates.Current}";
+        AutoUpdateSwitch.IsOn = Updates.Automatic;
+        AutoUpdateSwitch.Toggled += (_, _) => Updates.Automatic = AutoUpdateSwitch.IsOn;
 
         Switch(CaptureSwitch, settings.BrowserCapture, (s, on) => s with { BrowserCapture = on });
         Text(ExtensionsBox, string.Join(" ", settings.CaptureExtensions), (s, text) => s with { CaptureExtensions = Words(text) });
@@ -220,6 +223,39 @@ public sealed partial class SettingsWindow : Window
     {
         if (loading || StartupSwitch.IsOn == StartAtSignIn.IsOn) return;
         StartAtSignIn.Set(StartupSwitch.IsOn);
+    }
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        CheckButton.IsEnabled = false;
+        UpdateLink.Visibility = Visibility.Collapsed;
+        UpdateText.Visibility = Visibility.Visible;
+        UpdateText.Text = "Checking\u2026";
+        try
+        {
+            if (await Updates.CheckAsync() is { } release)
+            {
+                UpdateText.Text = $"OpenDM {release.Version} is available.";
+                UpdateLink.NavigateUri = new Uri(release.Page);
+                UpdateLink.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                UpdateText.Text = "You have the latest version.";
+            }
+        }
+        catch (HttpRequestException error)
+        {
+            UpdateText.Text = $"Could not check for updates. {error.Message}";
+        }
+        catch (TaskCanceledException)
+        {
+            UpdateText.Text = "Could not check for updates. GitHub did not answer in time.";
+        }
+        finally
+        {
+            CheckButton.IsEnabled = true;
+        }
     }
 
     // Categories

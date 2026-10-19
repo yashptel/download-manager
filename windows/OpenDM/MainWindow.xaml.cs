@@ -530,6 +530,14 @@ public sealed partial class MainWindow : Window
 
     /// <summary>The New Download prompt, from the tray menu.</summary>
     internal void NewDownload() => _ = ShowNewDownload();
+
+    internal void ShowUpdate(Release release)
+    {
+        UpdateBar.Title = $"OpenDM {release.Version} is available";
+        UpdateBar.Message = $"You have {Updates.Current}.";
+        UpdateBar.ActionButton = new HyperlinkButton { Content = "Download", NavigateUri = new Uri(release.Page) };
+        UpdateBar.IsOpen = true;
+    }
     private void Resume_Click(object sender, RoutedEventArgs e) => Resume(SelectedRows());
     private void Pause_Click(object sender, RoutedEventArgs e) => Pause(SelectedRows());
     private void Remove_Click(object sender, RoutedEventArgs e) => _ = Remove(SelectedRows(), false);

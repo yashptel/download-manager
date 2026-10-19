@@ -265,6 +265,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
@@ -306,8 +307,11 @@
                                     PlaceholderText="Search downloads" QueryIcon="Find" TextChanged="Search_TextChanged" />
                 </Grid>
 
+                <!-- A newer release, found by the daily update check. -->
+                <InfoBar x:Name="UpdateBar" Grid.Row="1" Margin="16,0,16,8" Severity="Informational" IsOpen="False" />
+
                 <!-- Column widths match ColumnsTemplate. Shown in the Columns style only. -->
-                <Grid x:Name="ColumnHeaders" Grid.Row="1" Margin="12,0,12,0" Padding="12,0,12,0" ColumnSpacing="12">
+                <Grid x:Name="ColumnHeaders" Grid.Row="2" Margin="12,0,12,0" Padding="12,0,12,0" ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" MinWidth="160" />
                         <ColumnDefinition Width="90" />
@@ -324,7 +328,7 @@
                     <Button x:Name="StatusHeader" Grid.Column="5" Tag="Status" Content="Status" Click="Header_Click" Style="{StaticResource HeaderButtonStyle}" />
                 </Grid>
 
-                <ListView x:Name="Table" Grid.Row="2" Padding="12,0,12,12" SelectionMode="Extended"
+                <ListView x:Name="Table" Grid.Row="3" Padding="12,0,12,12" SelectionMode="Extended"
                           SelectionChanged="Table_SelectionChanged" PreviewKeyDown="Table_PreviewKeyDown"
                           ContextRequested="Table_ContextRequested" DoubleTapped="Table_DoubleTapped">
                     <!-- Rows realized off-screen keep their bindings and redraw on every
@@ -341,7 +345,7 @@
                     </ListView.ItemContainerTransitions>
                 </ListView>
 
-                <TextBlock x:Name="EmptyText" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                <TextBlock x:Name="EmptyText" Grid.Row="3" HorizontalAlignment="Center" VerticalAlignment="Center"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" IsHitTestVisible="False" />
             </Grid>
         </NavigationView>
