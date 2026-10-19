@@ -32,7 +32,7 @@
                 </Grid>
 
                 <StackPanel x:Name="RunningPanel" Spacing="16">
-                    <ProgressBar x:Name="Bar" Maximum="1" />
+                    <ProgressBar x:Name="Bar" Maximum="1" UseLayoutRounding="False" />
                     <Grid x:Name="Facts" ColumnSpacing="16" RowSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
