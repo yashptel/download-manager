@@ -8,9 +8,13 @@ use std::path::{Path, PathBuf};
 /// The native messaging host name the extension connects to.
 pub const HOST_NAME: &str = "org.opendm.host";
 
-/// Chromium extension IDs allowed to start the host. The first is the
-/// development ID fixed by the public key in `extension/manifest.json`.
-pub const CHROMIUM_EXTENSION_IDS: &[&str] = &["nkhhoiejpomapjkeomdbflaicnnjclfj"];
+/// Chromium extension IDs allowed to start the host: the development ID
+/// fixed by the public key in `extension/manifest.json`, then the Chrome Web
+/// Store's.
+pub const CHROMIUM_EXTENSION_IDS: &[&str] = &[
+    "nkhhoiejpomapjkeomdbflaicnnjclfj",
+    "mjebgoilgooegcpfbmjnapamjpcnhcbg",
+];
 
 /// The Firefox add-on ID from `browser_specific_settings` in the manifest.
 pub const FIREFOX_EXTENSION_ID: &str = "connect@opendm.org";
@@ -197,7 +201,10 @@ mod tests {
         );
         assert_eq!(
             chromium["allowed_origins"],
-            serde_json::json!(["chrome-extension://nkhhoiejpomapjkeomdbflaicnnjclfj/"])
+            serde_json::json!([
+                "chrome-extension://nkhhoiejpomapjkeomdbflaicnnjclfj/",
+                "chrome-extension://mjebgoilgooegcpfbmjnapamjpcnhcbg/"
+            ])
         );
         let firefox: serde_json::Value = serde_json::from_str(&manifest(host, true)).unwrap();
         assert_eq!(
