@@ -1,0 +1,130 @@
+# Builds the Windows installer, the macOS disk image and the browser
+# extension package. A pushed v* tag also gets a draft release with them;
+# publishing it is a manual step. Run it by hand from the Actions tab to just
+# build.
+#
+# Signing is optional and comes from repository secrets:
+#   WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD
+#       a code-signing certificate as a base64 .pfx and its password
+#   MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD, MACOS_SIGN_IDENTITY
+#       a Developer ID Application certificate as a base64 .p12, its
+#       password and its name ("Developer ID Application: …")
+#   NOTARY_KEY, NOTARY_KEY_ID, NOTARY_ISSUER
+#       an App Store Connect API key as a base64 .p8, its ID and issuer
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      HAS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Import the signing certificate
+        if: env.HAS_CERTIFICATE == 'true'
+        shell: pwsh
+        env:
+          CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE))
+          $password = ConvertTo-SecureString $env:PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          "OPENDM_SIGN_CERT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
+      - name: Build the installer
+        shell: pwsh
+        run: scripts/package-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: build/windows/OpenDM-*-setup.exe
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    env:
+      HAS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE != '' }}
+      HAS_NOTARY_KEY: ${{ secrets.NOTARY_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add the Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Import the signing certificate
+        if: env.HAS_CERTIFICATE == 'true'
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "" "$keychain"
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+      - name: Prepare notarization
+        if: env.HAS_NOTARY_KEY == 'true'
+        env:
+          KEY: ${{ secrets.NOTARY_KEY }}
+          KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          echo "$KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          echo "NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+          echo "NOTARY_KEY_ID=$KEY_ID" >> "$GITHUB_ENV"
+          echo "NOTARY_ISSUER=$ISSUER" >> "$GITHUB_ENV"
+      - name: Build the disk image
+        run: scripts/package-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: build/OpenDM-*.dmg
+          if-no-files-found: error
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package the extension
+        run: python3 scripts/package-extension.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: build/extension/*.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY" --draft --generate-notes --title "OpenDM ${GITHUB_REF_NAME#v}"
+
