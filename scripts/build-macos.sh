@@ -30,7 +30,6 @@ mkdir -p "$work/headers"
 
 libraries=""
 engines=""
-swift_archs=""
 for arch in $archs; do
     case "$arch" in
         arm64) triple=aarch64-apple-darwin ;;
@@ -42,7 +41,6 @@ for arch in $archs; do
     hosts="${hosts:-} target/$triple/release/opendm-host"
     scripts/fetch-engine.sh "macos-$arch" > /dev/null
     engines="$engines vendor/aria2-next/bin/aria2-next-macos-$arch"
-    swift_archs="$swift_archs --arch $arch"
     bindings_library="target/$triple/release/libopendm_core.dylib"
 done
 lipo -create $libraries -output "$work/libopendm_core.a"
@@ -63,15 +61,22 @@ xcodebuild -create-xcframework -library "$work/libopendm_core.a" -headers "$work
 # mode (old chrome, misaligned sidebar toolbar). -isysroot makes it read the
 # real SDK version.
 sdk=$(xcrun --sdk macosx --show-sdk-path)
-swift_flags="$swift_archs -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $sdk"
-swift build -c release --package-path apple $swift_flags
-binaries=$(swift build -c release --package-path apple $swift_flags --show-bin-path)
+# One build per architecture, joined with lipo: given several --arch, SwiftPM
+# hands the build to Xcode's build system, which then cannot find the static
+# library inside the XCFramework (seen with Xcode 26.6).
+executables=""
+for arch in $archs; do
+    swift_flags="--triple $arch-apple-macosx13.0 -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc $sdk"
+    swift build -c release --package-path apple $swift_flags
+    executables="$executables $(swift build -c release --package-path apple $swift_flags --show-bin-path)/OpenDM"
+done
+lipo -create $executables -output "$work/OpenDM"
 
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 app="$root/build/OpenDM.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$binaries/OpenDM" "$app/Contents/MacOS/OpenDM"
+cp "$work/OpenDM" "$app/Contents/MacOS/OpenDM"
 cp "$work/aria2-next" "$app/Contents/MacOS/aria2-next"
 cp "$work/opendm-host" "$app/Contents/MacOS/opendm-host"
 cp LICENSE "$app/Contents/Resources/LICENSE"
