@@ -120,6 +120,7 @@ impl Db {
                     cookies_refreshed: false,
                     retries: 0,
                     retried_from: 0,
+                    rate: None,
                 })
             })
             .map_err(|error| error.to_string())?

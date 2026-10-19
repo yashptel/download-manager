@@ -7,6 +7,7 @@
 mod browser;
 mod db;
 mod engine;
+mod eta;
 mod media;
 mod rpc;
 mod schedule;

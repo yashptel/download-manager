@@ -86,6 +86,8 @@ pub struct Task {
     /// bytes done then; not saved.
     pub retries: u32,
     pub retried_from: u64,
+    /// The rate behind time left, while the download runs; not saved.
+    pub rate: Option<crate::eta::RateFilter>,
 }
 
 impl Task {
@@ -118,6 +120,7 @@ impl Task {
             cookies_refreshed: false,
             retries: 0,
             retried_from: 0,
+            rate: None,
         }
     }
 }
@@ -551,12 +554,17 @@ fn update_from_engine(task: &mut Task, status: &Value, settings: &Settings, now:
         row.connections = 0;
     }
     row.eta_secs = match row.status {
-        TaskStatus::Downloading
-            if !task.media && row.speed > 0 && row.total_bytes > row.done_bytes =>
-        {
-            Some((row.total_bytes - row.done_bytes) / row.speed)
+        TaskStatus::Downloading if !task.media && row.total_bytes > row.done_bytes => {
+            let rate = task
+                .rate
+                .get_or_insert_with(|| crate::eta::RateFilter::new(now, row.done_bytes, row.speed));
+            rate.update(now, row.done_bytes, row.speed);
+            rate.time_left(row.total_bytes - row.done_bytes)
         }
-        _ => None,
+        _ => {
+            task.rate = None;
+            None
+        }
     };
     row.category = settings.classify(&row.name);
 }
