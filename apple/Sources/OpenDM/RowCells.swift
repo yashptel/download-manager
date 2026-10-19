@@ -142,9 +142,11 @@ final class CardCellView: NSTableCellView {
         }
         statusIcon.contentTintColor = look.color
         statusIcon.setAccessibilityLabel(look.title)
-        statusText.textColor = task.status == .failed ? .systemRed : look.color == .tertiaryLabelColor ? .secondaryLabelColor : look.color
+        let failed = task.status == .failed && task.retryAt == nil
+        statusText.textColor = failed ? .systemRed : look.color == .tertiaryLabelColor ? .secondaryLabelColor : look.color
 
         var status = [task.status == .failed ? task.error ?? look.title : look.title]
+        if task.status == .failed, let retrying = Format.retrying(task) { status.append(retrying) }
         if task.status == .downloading {
             if task.speed > 0 { status.append(Format.speed(task.speed)) }
             if let left = Format.remaining(task.etaSecs) { status.append(left) }
@@ -270,7 +272,8 @@ final class ListCellView: NSTableCellView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func show(_ task: TaskRow) {
-        status = task.status
+        // Red only for a failure that stays; one waiting to try again looks queued.
+        status = task.retryAt == nil ? task.status : .queued
         name.setIfChanged(task.name)
         let fileIcon = FileIcons.icon(for: task.name, size: 32)
         if icon.image !== fileIcon { icon.image = fileIcon }

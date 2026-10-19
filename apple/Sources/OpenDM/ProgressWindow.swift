@@ -206,7 +206,7 @@ struct DownloadProgressView: View {
         }
         let downloading = row.status == .downloading
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 6) {
-            fact("Status", row.status == .failed ? (row.error ?? "Failed") : Format.status(row))
+            fact("Status", Format.status(row))
             fact("Downloaded", [Format.amount(row), Format.percent(row)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
             // These rows stay while paused so the window keeps its height.
             fact("Speed", downloading ? Format.speed(row.speed) : "", always: true)

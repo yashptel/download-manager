@@ -56,8 +56,14 @@ enum Format {
         case .queued: return "Queued"
         case .paused: return "Paused"
         case .complete: return "Completed"
-        case .failed: return task.error ?? "Failed"
+        case .failed: return [task.error ?? "Failed", retrying(task)].compactMap { $0 }.joined(separator: " · ")
         }
+    }
+
+    /// "Retrying at 10:52", for a failed download the app tries again on its own.
+    static func retrying(_ task: TaskRow) -> String? {
+        guard let at = task.retryAt else { return nil }
+        return "Retrying at " + Date(timeIntervalSince1970: TimeInterval(at) / 1000).formatted(date: .omitted, time: .shortened)
     }
 
     static func date(_ unixMilliseconds: Int64) -> String {
@@ -115,7 +121,7 @@ enum Format {
         case .queued: ["Waiting", amount(task)]
         case .paused: ["Paused", amount(task)]
         case .complete: [task.totalBytes > 0 ? bytes(task.totalBytes) : "Completed"]
-        case .failed: [task.error ?? "Failed"]
+        case .failed: [task.error ?? "Failed", retrying(task)]
         }
         return parts.compactMap { $0 }.joined(separator: " · ")
     }
@@ -129,7 +135,11 @@ struct StatusLook {
 
     @MainActor
     static func of(_ task: TaskRow) -> StatusLook {
-        switch task.status {
+        // A download waiting to try again looks queued, not failed.
+        if task.status == .failed, let retrying = Format.retrying(task) {
+            return StatusLook(symbol: "clock.fill", color: .tertiaryLabelColor, title: retrying)
+        }
+        return switch task.status {
         case .downloading: StatusLook(symbol: "arrow.down.circle.fill", color: .controlAccentColor, title: "Downloading")
         case .queued: StatusLook(symbol: "clock.fill", color: .tertiaryLabelColor, title: "Queued")
         case .paused: StatusLook(symbol: "pause.circle.fill", color: .systemOrange, title: "Paused")
