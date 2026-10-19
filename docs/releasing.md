@@ -29,14 +29,15 @@ python3 scripts/package-extension.py   # build/extension/opendm-connect-<version
 
 ## Updates
 
-The Windows app asks GitHub for the latest published release when it
-starts and once a day, and shows a newer one in its window with a link to
-the release; Settings can check on demand or turn the daily check off.
-Drafts and pre-releases are not offered. The check asks
+Both apps ask GitHub for the latest published release when they start and
+once a day, and offer a newer one: Windows in a bar in its window, macOS in a
+sheet with Download, Later and Skip This Version (shown when the window is).
+Settings can check on demand or turn the daily check off. Drafts and
+pre-releases are not offered. The check asks
 `api.github.com/repos/yashptel/download-manager/releases/latest` without
-signing in, so it finds nothing while the repository is private. The macOS
-app has no update check yet; [Sparkle](https://sparkle-project.org) is the
-usual way to add one.
+signing in, so it finds nothing while the repository is private. Neither app
+installs updates itself; [Sparkle](https://sparkle-project.org) would add
+that on macOS, with a signing key and an appcast feed.
 
 The installer upgrades in place: it stops a running OpenDM from the same
 folder, replaces the files and keeps the history, settings and logins.

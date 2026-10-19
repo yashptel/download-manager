@@ -269,6 +269,10 @@ private let tabWidth: CGFloat = 580
 
 private struct GeneralSettings: View {
     @EnvironmentObject var model: SettingsModel
+    @AppStorage("CheckForUpdates") private var checkForUpdates = true
+    @State private var updateText = ""
+    @State private var updatePage: URL?
+    @State private var checking = false
 
     var body: some View {
         Form {
@@ -301,10 +305,45 @@ private struct GeneralSettings: View {
                     Note("OpenDM starts in the menu bar, ready for downloads from the browser. Closing its window keeps it running there; Quit stops it.")
                 }
             }
+            Section {
+                LabeledContent("OpenDM \(Updates.current)") {
+                    Button("Check Now") { Task { await checkNow() } }
+                        .disabled(checking)
+                }
+                Toggle("Check for updates every day", isOn: $checkForUpdates)
+            } header: {
+                Text("Updates")
+            } footer: {
+                if !updateText.isEmpty {
+                    HStack(spacing: 6) {
+                        Note(updateText)
+                        if let updatePage {
+                            Link("Download", destination: updatePage).font(.callout)
+                        }
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
         .frame(width: tabWidth)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func checkNow() async {
+        checking = true
+        updatePage = nil
+        updateText = "Checking…"
+        do {
+            if let release = try await Updates.check() {
+                updateText = "OpenDM \(release.version) is available."
+                updatePage = release.page
+            } else {
+                updateText = "You have the latest version."
+            }
+        } catch {
+            updateText = "Could not check for updates. \(error.localizedDescription)"
+        }
+        checking = false
     }
 }
 

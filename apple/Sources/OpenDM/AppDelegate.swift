@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = DownloadStore()
     private var mainWindow: MainWindowController?
     private var statusItem: StatusItemController?
+    private var updateCheck: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
@@ -42,6 +43,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController(store: store)
         core.start()
         Self.installBrowserHost(core)
+        // At launch, then daily, unless turned off in Settings.
+        updateCheck = Task { [weak self] in
+            while !Task.isCancelled {
+                if Updates.automatic, let release = try? await Updates.check() {
+                    self?.mainWindow?.showUpdate(release)
+                }
+                try? await Task.sleep(for: .seconds(86_400))
+            }
+        }
         // At login, and when the browser extension starts it (--background),
         // OpenDM opens in the menu bar only.
         if CommandLine.arguments.contains("--background") || Self.launchedAtLogin() {

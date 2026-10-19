@@ -26,6 +26,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     private var statusLabel: NSTextField?
     private let downloadDir: URL
     private var shown = false
+    /// A newer release found while the window was hidden; shown when it opens.
+    private var pendingUpdate: Updates.Release?
 
     private static let sortKeys: [(title: String, key: String)] = [
         ("Date Added", "added"), ("Name", "name"), ("Size", "size"), ("Progress", "progress"),
@@ -104,6 +106,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         NSApp.activate(ignoringOtherApps: true)
         shown = true
         reportVisible()
+        if let pendingUpdate { showUpdate(pendingUpdate) }
     }
 
     // MARK: Window
@@ -181,6 +184,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         alert.addButton(withTitle: "Close")
         alert.beginSheetModal(for: window) { [core] response in
             if response == .alertFirstButtonReturn { core.restartEngine() }
+        }
+    }
+
+    /// Offers a newer release once the window shows, unless the user skipped it.
+    func showUpdate(_ release: Updates.Release) {
+        guard UserDefaults.standard.string(forKey: "SkippedUpdate") != release.version else { return }
+        guard let window, window.isVisible, window.attachedSheet == nil else {
+            pendingUpdate = release
+            return
+        }
+        pendingUpdate = nil
+        let alert = NSAlert()
+        alert.messageText = "OpenDM \(release.version) is available"
+        alert.informativeText = "You have \(Updates.current)."
+        alert.addButton(withTitle: "Download")
+        alert.addButton(withTitle: "Later")
+        alert.addButton(withTitle: "Skip This Version")
+        alert.beginSheetModal(for: window) { response in
+            switch response {
+            case .alertFirstButtonReturn: NSWorkspace.shared.open(release.page)
+            case .alertThirdButtonReturn: UserDefaults.standard.set(release.version, forKey: "SkippedUpdate")
+            default: break
+            }
         }
     }
 
