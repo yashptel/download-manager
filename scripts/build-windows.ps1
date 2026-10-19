@@ -49,6 +49,8 @@ Copy-Item (Join-Path $root "vendor\aria2-next\bin\COPYING") (Join-Path $native "
 Copy-Item (Join-Path $root "LICENSE") (Join-Path $native "LICENSE.txt")
 
 $out = Join-Path $root "build\windows\OpenDM-$Arch"
+# A fresh folder, so files from an earlier build never reach the installer.
+if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 $version = (Select-String -Path (Join-Path $root "Cargo.toml") -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
 Invoke-Native dotnet @("publish", (Join-Path $app "OpenDM.csproj"), "-c", $Configuration, "-r", "win-$Arch",
     "-p:Platform=$Arch", "-p:Version=$version", "-o", $out)

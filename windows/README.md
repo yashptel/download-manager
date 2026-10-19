@@ -31,6 +31,15 @@ generator into `build\tools` on first use, generates `OpenDM\Core\opendm_core.cs
 copies the native files into `OpenDM\Native` and publishes the app. After one
 run, `OpenDM\OpenDM.csproj` also opens and builds in Visual Studio.
 
+The published app is compiled ahead of time (Native AOT): against the JIT build
+it uses about 9 MB less private memory and 40 MB less working set, starts in
+0.5–0.8 s instead of 0.85–1.1 s, and makes a 45 MB installer instead of 67 MB.
+Most of what remains (about 75 MB) is WinUI itself: an empty WinUI 3 window
+costs that much. Under AOT, a class whose objects are handed to WinUI (an
+`ItemsSource`, or items that raise `PropertyChanged`) must be `partial`, so
+C#/WinRT can generate its interop code; the build warns (CsWinRT1028) when one
+is not, and without it the app crashes when the list is set.
+
 Run against a scratch data folder during development:
 
 ```powershell

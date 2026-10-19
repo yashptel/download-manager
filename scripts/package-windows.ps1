@@ -28,7 +28,7 @@ if ($env:OPENDM_SIGN_CERT) {
     if (-not $signtool) { throw "signtool.exe not found; install the Windows SDK" }
     $timestamp = if ($env:OPENDM_SIGN_TIMESTAMP) { $env:OPENDM_SIGN_TIMESTAMP } else { "http://timestamp.digicert.com" }
     $signArgs = @("sign", "/sha1", $env:OPENDM_SIGN_CERT, "/s", "My", "/fd", "SHA256", "/tr", $timestamp, "/td", "SHA256")
-    $binaries = "OpenDM.exe", "OpenDM.dll", "opendm-host.exe", "opendm_core.dll", "aria2-next.exe" | ForEach-Object { Join-Path $app $_ }
+    $binaries = "OpenDM.exe", "opendm-host.exe", "opendm_core.dll", "aria2-next.exe" | ForEach-Object { Join-Path $app $_ }
     Invoke-Native $signtool ($signArgs + $binaries)
 }
 

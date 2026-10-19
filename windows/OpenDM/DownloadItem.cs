@@ -7,7 +7,7 @@ namespace OpenDM;
 /// displayed value that changed raises its own notification, so a progress
 /// tick touches only the cells whose text or bar actually changed.
 /// </summary>
-public sealed class DownloadItem : INotifyPropertyChanged
+public sealed partial class DownloadItem : INotifyPropertyChanged
 {
     /// <summary>Every value a row style shows, compared before and after an update.</summary>
     private static readonly (string Name, Func<DownloadItem, object?> Value)[] Shown =

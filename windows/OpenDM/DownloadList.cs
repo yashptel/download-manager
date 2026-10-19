@@ -12,7 +12,7 @@ namespace OpenDM;
 /// insert because the WinUI ListView treats a Move like a Reset: it re-binds
 /// every realized row and drops the whole selection.
 /// </summary>
-public sealed class DownloadList : ObservableCollection<DownloadItem>
+public sealed partial class DownloadList : ObservableCollection<DownloadItem>
 {
     private const int MaxChanges = 64;
 

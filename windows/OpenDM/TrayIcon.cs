@@ -14,7 +14,7 @@ namespace OpenDM;
 /// taskbar's light or dark mode. The native popup menu runs each item's
 /// Command, so items use commands rather than Click handlers.
 /// </summary>
-internal sealed class TrayIcon : IDisposable
+internal sealed partial class TrayIcon : IDisposable
 {
     private readonly TaskbarIcon icon;
     private readonly UISettings settings = new();

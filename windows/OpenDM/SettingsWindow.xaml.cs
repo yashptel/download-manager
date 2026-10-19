@@ -397,7 +397,7 @@ public sealed partial class SettingsWindow : Window
 }
 
 /// <summary>One row of the categories table, edited in place.</summary>
-public sealed class CategoryItem : INotifyPropertyChanged
+public sealed partial class CategoryItem : INotifyPropertyChanged
 {
     private readonly Action changed;
     private string name;

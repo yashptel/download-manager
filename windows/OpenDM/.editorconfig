@@ -1,0 +1,5 @@
+# The generated UniFFI bindings implement IDisposable, which C#/WinRT counts
+# as a WinRT interface; they are never handed to WinUI, so its AOT warning
+# does not apply.
+[Core/opendm_core.cs]
+dotnet_diagnostic.CsWinRT1028.severity = none

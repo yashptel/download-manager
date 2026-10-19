@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 namespace OpenDM;
 
 /// <summary>One file in the several-downloads dialog.</summary>
-public sealed class BatchItem : INotifyPropertyChanged
+public sealed partial class BatchItem : INotifyPropertyChanged
 {
     private bool? chosen = true;
 
