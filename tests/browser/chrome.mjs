@@ -246,6 +246,16 @@ try {
   if (file) await page.click(file.x, file.y);
   const clip = await until("the clip", 20000, async () => listFiles(APP_DL).find((f) => f.endsWith(".webm")));
   check("the menu's file entry sends the video to OpenDM", Boolean(clip), clip);
+  await page.click(main.x, main.y); // Closes the menu.
+  await sleep(300);
+
+  // 6b. The button also appears over a video inside a player's shadow root.
+  await page.evaluate("document.getElementById('shadow-player').scrollIntoView()");
+  const shadowBox = await page.evaluate("(() => { const r = document.getElementById('shadow-player').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()");
+  await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: shadowBox.x + shadowBox.w / 2, y: shadowBox.y + shadowBox.h / 2 });
+  await sleep(400);
+  const overShadow = await page.evaluate("(() => { const host = document.querySelector('opendm-connect'); const r = host.getBoundingClientRect(); const p = document.getElementById('shadow-player').getBoundingClientRect(); return getComputedStyle(host).display === 'block' && r.top >= p.top && r.bottom <= p.bottom; })()");
+  check("video button appears over a video in a shadow root", overShadow === true, String(overShadow));
 
   // 7. "Download all links" hands over every link on the page.
   const links = await sw.evaluate(

@@ -8,7 +8,15 @@
   <p><a id="zip" href="/files/report.zip">Quarterly report (6 MB zip)</a></p>
   <p><a href="/files/clip.webm">A clip</a></p>
   <video id="video" src="/files/clip.webm" width="560" height="315" muted loop controls></video>
+  <!-- A player built as a web component keeps its video in a shadow root (Reddit). -->
+  <shadow-player id="shadow-player"></shadow-player>
   <script>
+    customElements.define("shadow-player", class extends HTMLElement {
+      connectedCallback() {
+        const root = this.attachShadow({ mode: "open" });
+        root.innerHTML = '<div style="position:relative;width:560px;height:315px"><video src="/files/clip.webm" width="560" height="315" muted loop></video><div class="overlay" style="position:absolute;inset:0"></div></div>';
+      }
+    });
     // What a script player does: ask its API for the video, then load the
     // master playlist and the quality it starts with. Nothing in the page's
     // HTML names the playlist.
