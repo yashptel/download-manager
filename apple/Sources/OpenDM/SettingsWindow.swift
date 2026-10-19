@@ -596,11 +596,11 @@ private struct ConnectionSettings: View {
                 Note("For downloads you add yourself; empty connects directly. Downloads from the browser use the browser's proxy.")
             }
             Section {
-                TextField("User agent", text: $model.settings.userAgent, prompt: Text("The engine's own"))
+                TextField("User agent", text: $model.settings.userAgent, prompt: Text("Your browser's"))
             } header: {
                 Text("Requests")
             } footer: {
-                Note("For downloads you add yourself. Downloads from the browser keep the browser's user agent.")
+                Note("For downloads you add yourself. Empty sends the user agent of your browser's last download, so servers treat them alike. Downloads from the browser keep the browser's.")
             }
             Section {
                 EditorBox(text: model.words(\.customHeaders, separator: "\n"), height: 58, placeholder: "Name: value", monospaced: true)

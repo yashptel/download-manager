@@ -272,6 +272,8 @@ pub(crate) struct Shared {
     pub probe_slots: Mutex<u32>,
     /// Set while yt-dlp and Deno are being downloaded.
     pub tools_busy: AtomicBool,
+    /// The user agent the browser sent with its last download.
+    pub browser_user_agent: Mutex<Option<String>>,
 }
 
 impl Shared {
@@ -327,6 +329,7 @@ impl DownloadCore {
             &data_dir.join("settings.json"),
             &config.default_download_dir,
         );
+        let browser_user_agent = browser::saved_user_agent(&data_dir);
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("opendm-core")
@@ -352,6 +355,7 @@ impl DownloadCore {
             next_request: AtomicU64::new(1),
             probe_slots: Mutex::new(0),
             tools_busy: AtomicBool::new(false),
+            browser_user_agent: Mutex::new(browser_user_agent),
         });
         Ok(Arc::new(DownloadCore {
             runtime,

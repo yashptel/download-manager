@@ -989,7 +989,13 @@ pub async fn add(
     let start = shared.tasks.lock().unwrap().next_added_at(now_ms());
     let mut new_tasks = Vec::new();
     let mut calls = Vec::new();
-    for (index, (id, download)) in downloads.into_iter().enumerate() {
+    // Links added by hand look like the browser, unless the settings name a user agent.
+    let agent = settings.user_agent.trim().is_empty().then(|| crate::browser::user_agent(shared));
+    for (index, (id, mut download)) in downloads.into_iter().enumerate() {
+        let has_agent = download.headers.iter().any(|header| header.to_ascii_lowercase().starts_with("user-agent:"));
+        if download.user_agent.is_none() && !has_agent {
+            download.user_agent = agent.clone();
+        }
         // Offset by the index so a pasted list keeps its order.
         let (task, options) = prepare(&settings, id.clone(), &download, start_paused, start + index as i64);
         calls.push((id, json!([download.url.trim()]), options));

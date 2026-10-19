@@ -237,6 +237,40 @@ async fn capture(shared: &Shared, message: &Value) -> Value {
     answer(accept(shared, message, started))
 }
 
+/// The file that keeps the browser's user agent between runs.
+fn user_agent_file(data_dir: &std::path::Path) -> std::path::PathBuf {
+    data_dir.join("browser-user-agent.txt")
+}
+
+/// Keeps the user agent the browser sent with its last download, so links
+/// added by hand look like the same browser.
+fn remember_user_agent(shared: &Shared, agent: Option<&str>) {
+    let Some(agent) = agent
+        .map(str::trim)
+        .filter(|agent| agent.starts_with("Mozilla/") && agent.len() <= 512 && !agent.contains(['\r', '\n']))
+    else {
+        return;
+    };
+    let mut current = shared.browser_user_agent.lock().unwrap();
+    if current.as_deref() != Some(agent) {
+        *current = Some(agent.to_string());
+        let _ = std::fs::write(user_agent_file(&shared.data_dir), agent);
+    }
+}
+
+/// The browser's user agent from its last download, or a current Chrome's
+/// before any.
+pub fn user_agent(shared: &Shared) -> String {
+    let remembered = shared.browser_user_agent.lock().unwrap().clone();
+    remembered.unwrap_or_else(|| crate::settings::DEFAULT_USER_AGENT.into())
+}
+
+/// The remembered user agent, read when the app starts.
+pub fn saved_user_agent(data_dir: &std::path::Path) -> Option<String> {
+    let agent = std::fs::read_to_string(user_agent_file(data_dir)).ok()?;
+    Some(agent.trim().to_string()).filter(|agent| agent.starts_with("Mozilla/"))
+}
+
 fn answer(accepted: Result<(), String>) -> Value {
     match accepted {
         Ok(()) => json!({ "result": "accepted" }),
@@ -285,6 +319,7 @@ fn engine_down(shared: &Shared) -> bool {
 /// Hands the downloads in `message` to the app, or says why it cannot take
 /// them. `started` is the ID the first one already runs under.
 fn accept(shared: &Shared, message: &Value, started: Option<String>) -> Result<(), String> {
+    remember_user_agent(shared, message["items"][0]["userAgent"].as_str());
     let source = match message["source"].as_str() {
         Some("download") => BrowserSource::Download,
         Some("link") => BrowserSource::Link,

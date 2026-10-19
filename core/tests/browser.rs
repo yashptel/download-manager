@@ -289,3 +289,72 @@ fn the_extension_hands_a_download_to_the_app() {
 
     core.shutdown();
 }
+
+#[test]
+fn links_added_by_hand_send_the_browser_user_agent() {
+    let Some(engine) = engine_path() else {
+        eprintln!("skipped: no aria2-next binary");
+        return;
+    };
+    let data = tempfile::tempdir().unwrap();
+    let downloads = tempfile::tempdir().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let port = serve(requests.clone());
+    let recorder = Arc::new(Recorder::default());
+    let core = DownloadCore::new(
+        CoreConfig {
+            engine_path: engine.display().to_string(),
+            data_dir: data.path().display().to_string(),
+            default_download_dir: downloads.path().display().to_string(),
+        },
+        recorder.clone(),
+    )
+    .unwrap();
+    core.start();
+    wait_for("the engine", Duration::from_secs(20), || *recorder.running.lock().unwrap());
+    let agent_of = |path: &str| {
+        let mut agent = None;
+        wait_for(path, Duration::from_secs(20), || {
+            agent = requests.lock().unwrap().iter().find(|head| head.contains(path)).and_then(|head| {
+                head.lines().find_map(|line| line.trim_end().strip_prefix("User-Agent: ").map(String::from))
+            });
+            agent.is_some()
+        });
+        agent.unwrap()
+    };
+
+    // Before the browser has handed over anything: a current Chrome's.
+    let link = |path: &str| NewDownload { url: format!("http://127.0.0.1:{port}{path}"), ..NewDownload::default() };
+    core.add_downloads(vec![link("/first")], false);
+    let first = agent_of("/first ");
+    assert!(first.starts_with("Mozilla/5.0 ") && first.contains(" Chrome/"), "{first}");
+
+    // After a download from the browser: the browser's own, kept for the next run.
+    let mut socket = None;
+    wait_for("the browser socket", Duration::from_secs(5), || {
+        socket = connect(data.path()).ok();
+        socket.is_some()
+    });
+    let browser = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TestBrowser/9.9";
+    let answer = ask(
+        &mut socket.unwrap(),
+        serde_json::json!({
+            "id": 1,
+            "type": "download",
+            "source": "link",
+            "items": [{ "url": format!("http://127.0.0.1:{port}/from-browser"), "userAgent": browser }],
+        }),
+    );
+    assert_eq!(answer["result"], "accepted");
+    core.add_downloads(vec![link("/second")], false);
+    assert_eq!(agent_of("/second "), browser);
+    assert_eq!(std::fs::read_to_string(data.path().join("browser-user-agent.txt")).unwrap(), browser);
+
+    // A user agent in the settings wins.
+    let mut settings = core.settings();
+    settings.user_agent = "Custom/1.0".into();
+    core.set_settings(settings).unwrap();
+    core.add_downloads(vec![link("/third")], false);
+    assert_eq!(agent_of("/third "), "Custom/1.0");
+    core.shutdown();
+}

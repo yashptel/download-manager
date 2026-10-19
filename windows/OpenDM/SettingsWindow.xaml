@@ -375,10 +375,10 @@
                         <Grid ColumnSpacing="12">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <TextBlock Text="User agent" Style="{StaticResource CardTitle}" />
-                            <TextBox x:Name="UserAgentBox" Style="{StaticResource Field}" PlaceholderText="The engine's own" AutomationProperties.Name="User agent" />
+                            <TextBox x:Name="UserAgentBox" Style="{StaticResource Field}" PlaceholderText="Your browser's" AutomationProperties.Name="User agent" />
                         </Grid>
                     </Border>
-                    <TextBlock Style="{StaticResource Note}" Text="For downloads you add yourself. Downloads from the browser keep the browser's user agent." />
+                    <TextBlock Style="{StaticResource Note}" Text="For downloads you add yourself. Empty sends the user agent of your browser's last download, so servers treat them alike. Downloads from the browser keep the browser's." />
 
                     <TextBlock Text="Headers for every download" Style="{StaticResource Section}" />
                     <TextBox x:Name="HeadersBox" Style="{StaticResource Editor}" Height="72" PlaceholderText="Name: value" TextWrapping="NoWrap"

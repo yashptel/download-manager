@@ -3,6 +3,17 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// What downloads added by hand send when the settings name no user agent
+/// and no browser has handed over a download yet: a current Chrome's. Some
+/// servers refuse requests that do not look like a browser.
+pub const DEFAULT_USER_AGENT: &str = if cfg!(target_os = "macos") {
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
+} else if cfg!(target_os = "linux") {
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
+} else {
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
+};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, uniffi::Record)]
 #[serde(default)]
 pub struct Settings {
@@ -44,7 +55,8 @@ pub struct Settings {
     pub proxy: String,
     /// Hosts reached without the proxy, comma separated.
     pub no_proxy: String,
-    /// For downloads the browser did not hand over; empty for the engine's own.
+    /// For downloads the browser did not hand over; empty for the browser's:
+    /// the one its last download sent, or a current Chrome's before any.
     pub user_agent: String,
     /// "Name: value" headers sent with every download.
     pub custom_headers: Vec<String>,
@@ -221,6 +233,8 @@ impl Settings {
         ];
         if !self.user_agent.trim().is_empty() {
             options.push(("user-agent", self.user_agent.trim().to_string()));
+        } else {
+            options.push(("user-agent", DEFAULT_USER_AGENT.to_string()));
         }
         // Values go into a config file, one per line.
         for (_, value) in &mut options {
@@ -334,7 +348,7 @@ mod tests {
         assert_eq!(options["all-proxy"], "http://user:pw@proxy:8080");
         assert_eq!(options["allow-overwrite"], "true");
         assert_eq!(options["auto-file-renaming"], "false");
-        assert!(!options.contains_key("user-agent"));
+        assert_eq!(options["user-agent"], DEFAULT_USER_AGENT);
         assert_eq!(
             settings.extra_engine_options(),
             vec![("lowest-speed-limit".into(), "10K".into()), ("split".into(), "4".into())]
