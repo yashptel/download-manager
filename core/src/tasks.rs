@@ -18,7 +18,9 @@ use std::sync::atomic::Ordering;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const VISIBLE_INTERVAL: Duration = Duration::from_millis(500);
+/// While a window shows progress, often enough that the numbers count up
+/// as the bytes arrive; the engine's speed is already averaged over seconds.
+const VISIBLE_INTERVAL: Duration = Duration::from_millis(100);
 const BACKGROUND_INTERVAL: Duration = Duration::from_secs(2);
 /// Adds are sent in batches so a paste of thousands of links stays one
 /// round trip per batch.

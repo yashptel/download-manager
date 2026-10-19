@@ -66,6 +66,7 @@ public sealed partial class MainWindow : Window
     private bool dialogOpen;
     private bool engineFailureShown;
     private bool exiting;
+    private bool shown;
 
     internal MainWindow(DownloadStore store, DownloadCore core)
     {
@@ -86,6 +87,7 @@ public sealed partial class MainWindow : Window
         CenterOnScreen(1120, 700);
         AppWindow.Closing += AppWindow_Closing;
         AppWindow.Changed += AppWindow_Changed;
+        ProgressWindow.OpenChanged += ReportVisible;
 
         headers = new()
         {
@@ -136,7 +138,8 @@ public sealed partial class MainWindow : Window
         AppWindow.Show();
         Activate();
         Native.SetForegroundWindow(WindowNative.GetWindowHandle(this));
-        core.SetWindowVisible(true);
+        shown = true;
+        ReportVisible();
     }
 
     internal void CloseForExit()
@@ -178,15 +181,20 @@ public sealed partial class MainWindow : Window
         if (exiting) return;
         args.Cancel = true;
         sender.Hide();
-        core.SetWindowVisible(false);
+        shown = false;
+        ReportVisible();
     }
 
     private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
     {
         if (!args.DidVisibilityChange && !args.DidPresenterChange && !args.DidSizeChange) return;
         var minimized = sender.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized };
-        core.SetWindowVisible(sender.IsVisible && !minimized);
+        shown = sender.IsVisible && !minimized;
+        ReportVisible();
     }
+
+    /// <summary>Progress updates live while this window or a progress window shows it.</summary>
+    private void ReportVisible() => core.SetWindowVisible(shown || ProgressWindow.AnyOpen);
 
     // Sidebar
 

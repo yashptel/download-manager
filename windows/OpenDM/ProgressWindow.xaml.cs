@@ -20,6 +20,10 @@ public sealed partial class ProgressWindow : Window
     private const string DetailsKey = @"Software\OpenDM";
     private static readonly Dictionary<string, ProgressWindow> Open = new();
 
+    /// <summary>Raised when a progress window opens or closes.</summary>
+    internal static event Action? OpenChanged;
+    internal static bool AnyOpen => Open.Count > 0;
+
     private readonly string id;
     private readonly DownloadStore store;
     private readonly DownloadCore core;
@@ -44,6 +48,7 @@ public sealed partial class ProgressWindow : Window
             var window = new ProgressWindow(id, store, core);
             Open[id] = window;
             ToolWindows.Show(window, activate: false);
+            OpenChanged?.Invoke();
         }
     }
 
@@ -73,6 +78,7 @@ public sealed partial class ProgressWindow : Window
             store.RowsChanged -= OnRowsChanged;
             store.RowsRemoved -= OnRowsRemoved;
             Open.Remove(id);
+            OpenChanged?.Invoke();
         };
         Update();
         FetchDetails();

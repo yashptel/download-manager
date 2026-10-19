@@ -9,6 +9,9 @@ final class ProgressWindowController: NSWindowController, NSWindowDelegate, Down
     /// Set at launch; the windows follow the store's rows.
     static var store: DownloadStore?
     private static var open: [String: ProgressWindowController] = [:]
+    /// Called when a progress window opens or closes.
+    static var openChanged: (() -> Void)?
+    static var anyOpen: Bool { !open.isEmpty }
     /// More downloads than this started at once (a page of links) get no
     /// windows of their own.
     private static let maxAtOnce = 3
@@ -30,6 +33,7 @@ final class ProgressWindowController: NSWindowController, NSWindowDelegate, Down
             let controller = ProgressWindowController(id: id, store: store, core: core)
             open[id] = controller
             controller.present()
+            openChanged?()
         }
     }
 
@@ -75,6 +79,7 @@ final class ProgressWindowController: NSWindowController, NSWindowDelegate, Down
     func windowWillClose(_ notification: Notification) {
         timer?.invalidate()
         Self.open[id] = nil
+        Self.openChanged?()
     }
 
     // MARK: Store

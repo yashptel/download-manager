@@ -25,6 +25,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
     /// window subtitle instead.
     private var statusLabel: NSTextField?
     private let downloadDir: URL
+    private var shown = false
 
     private static let sortKeys: [(title: String, key: String)] = [
         ("Date Added", "added"), ("Name", "name"), ("Size", "size"), ("Progress", "progress"),
@@ -90,6 +91,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         sidebar.onSelect = { [weak list] filter in list?.filter = filter }
         store.addObserver(self)
         store.onError = { [weak self] message in self?.showError(message) }
+        ProgressWindowController.openChanged = { [weak self] in self?.reportVisible() }
         updateSubtitle()
     }
 
@@ -100,19 +102,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        core.setWindowVisible(visible: true)
+        shown = true
+        reportVisible()
     }
 
     // MARK: Window
 
     func windowWillClose(_ notification: Notification) {
-        core.setWindowVisible(visible: false)
+        shown = false
+        reportVisible()
         // Keep running in the menu bar without a Dock icon.
         NSApp.setActivationPolicy(.accessory)
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
-        core.setWindowVisible(visible: window?.occlusionState.contains(.visible) ?? false)
+        shown = window?.occlusionState.contains(.visible) ?? false
+        reportVisible()
+    }
+
+    /// Progress updates live while this window or a progress window shows it.
+    private func reportVisible() {
+        core.setWindowVisible(visible: shown || ProgressWindowController.anyOpen)
     }
 
     // MARK: Store
