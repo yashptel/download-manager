@@ -31,6 +31,19 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
+      # The C# bindings generator takes five minutes to compile; it is pinned,
+      # so its build keeps until the pin in build-windows.ps1 changes.
+      - uses: actions/cache@v6
+        with:
+          path: build/tools
+          key: uniffi-bindgen-cs-${{ hashFiles('scripts/build-windows.ps1') }}
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-windows-${{ hashFiles('Cargo.lock') }}
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
       - name: Import the signing certificate
@@ -62,6 +75,13 @@ jobs:
       HAS_NOTARY_KEY: ${{ secrets.NOTARY_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-macos-${{ hashFiles('Cargo.lock') }}
       - name: Add the Rust targets
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Import the signing certificate
