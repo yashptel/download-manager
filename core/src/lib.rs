@@ -48,6 +48,9 @@ pub struct TaskRow {
     pub eta_secs: Option<u64>,
     pub connections: u32,
     pub error: Option<String>,
+    /// When a failed download is tried again on its own, in Unix time in
+    /// milliseconds: it lost its connections for a reason that may pass.
+    pub retry_at: Option<i64>,
     /// Unix time in milliseconds.
     pub added_at: i64,
     pub finished_at: Option<i64>,

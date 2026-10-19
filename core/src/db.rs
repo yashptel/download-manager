@@ -106,6 +106,7 @@ impl Db {
                     connections: 0,
                     // Older rows hold the engine's own wording.
                     error: row.get::<_, Option<String>>(9)?.map(|error| crate::tasks::friendly_error(&error)),
+                    retry_at: None,
                     added_at: row.get(10)?,
                     finished_at: row.get(11)?,
                 };
@@ -117,6 +118,8 @@ impl Db {
                     move_name: row.get(15)?,
                     page: row.get(16)?,
                     cookies_refreshed: false,
+                    retries: 0,
+                    retried_from: 0,
                 })
             })
             .map_err(|error| error.to_string())?

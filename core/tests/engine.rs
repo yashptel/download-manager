@@ -18,6 +18,9 @@ use std::time::{Duration, Instant};
 const FILE_SIZE: u64 = 12 * 1024 * 1024;
 /// While set, /flaky/ responses break off after 256 KB.
 static FLAKY: AtomicBool = AtomicBool::new(true);
+/// While set, /outage/ cuts every connection partway, like a server that
+/// blocks this address for a while.
+static OUTAGE: AtomicBool = AtomicBool::new(true);
 
 fn engine_path() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("OPENDM_TEST_ENGINE") {
@@ -123,6 +126,9 @@ fn respond(mut stream: TcpStream) -> std::io::Result<()> {
         }
         if line.contains(" /flaky/") {
             flaky = FLAKY.load(Ordering::SeqCst);
+        }
+        if line.contains(" /outage/") {
+            flaky = OUTAGE.load(Ordering::SeqCst);
         }
         // An address that has expired partway through.
         if line.contains(" /expires/") {
@@ -424,6 +430,59 @@ fn a_download_that_failed_partway_continues_into_a_correct_file() {
     let first_wrong = bytes.iter().enumerate().position(|(index, byte)| *byte != byte_at(index as u64));
     assert_eq!(first_wrong, None, "the file should be correct throughout");
     core.shutdown();
+}
+
+
+#[test]
+fn a_download_cut_off_partway_tries_again_on_its_own() {
+    let Some(engine) = engine_path() else {
+        eprintln!("skipped: no aria2-next binary (run scripts/fetch-engine.sh)");
+        return;
+    };
+    let port = serve();
+    let temp = tempfile::tempdir().unwrap();
+    let downloads = temp.path().join("downloads");
+    let core = open(&engine, &temp.path().join("data"), &downloads, Arc::new(Recorder::default()));
+    let mut settings = core.settings();
+    settings.max_tries = 1;
+    settings.retry_wait = 0;
+    core.set_settings(settings).unwrap();
+    core.start();
+    wait_until("engine start", Duration::from_secs(15), || {
+        core.engine_state() == EngineState::Running
+    });
+
+    let id = core.add_downloads(
+        vec![NewDownload { url: format!("http://127.0.0.1:{port}/outage/big.bin"), ..NewDownload::default() }],
+        false,
+    )[0]
+    .clone();
+    wait_until("the failure", Duration::from_secs(30), || {
+        row(&core, &id).is_some_and(|row| row.status == TaskStatus::Failed && row.retry_at.is_some())
+    });
+    let failed = row(&core, &id).unwrap();
+    let wait = failed.retry_at.unwrap() - now_ms();
+    assert!((25_000..=30_000).contains(&wait), "retries in {wait} ms");
+    let kept = recorded(&temp.path().join("data"), &id);
+
+    // The server comes back; the download continues without the user.
+    OUTAGE.store(false, Ordering::SeqCst);
+    let mut least = u64::MAX;
+    wait_until("completion after the retry", Duration::from_secs(90), || {
+        let row = row(&core, &id).unwrap();
+        least = least.min(row.done_bytes);
+        row.status == TaskStatus::Complete
+    });
+    assert!(least >= kept, "went back from {kept} to {least} bytes");
+    let bytes = std::fs::read(row(&core, &id).unwrap().path.unwrap()).unwrap();
+    assert_eq!(bytes.len() as u64, FILE_SIZE);
+    let first_wrong = bytes.iter().enumerate().position(|(index, byte)| *byte != byte_at(index as u64));
+    assert_eq!(first_wrong, None, "the file should be correct throughout");
+    core.shutdown();
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
 }
 
 

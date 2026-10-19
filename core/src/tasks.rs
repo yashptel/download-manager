@@ -22,6 +22,19 @@ use std::time::{Duration, Instant};
 /// as the bytes arrive; the engine's speed is already averaged over seconds.
 const VISIBLE_INTERVAL: Duration = Duration::from_millis(100);
 const BACKGROUND_INTERVAL: Duration = Duration::from_secs(2);
+/// Waits before a failed download is tried again on its own; the last one
+/// repeats. The engine has already retried each connection a few times, so
+/// these are for what passes in minutes: a dropped network, or a server
+/// that blocks this address for a while.
+const RETRY_WAITS: [Duration; 5] = [
+    Duration::from_secs(30),
+    Duration::from_secs(60),
+    Duration::from_secs(120),
+    Duration::from_secs(300),
+    Duration::from_secs(600),
+];
+/// Tries in a row that get no further before a download stays failed.
+const MAX_RETRIES: u32 = 10;
 /// Adds are sent in batches so a paste of thousands of links stays one
 /// round trip per batch.
 const ADD_BATCH: usize = 500;
@@ -69,6 +82,10 @@ pub struct Task {
     /// Restarted once with the browser's fresh cookies after a 401 or 403
     /// since the user last started it; not saved.
     pub cookies_refreshed: bool,
+    /// Tries made on its own since the download last got further, and its
+    /// bytes done then; not saved.
+    pub retries: u32,
+    pub retried_from: u64,
 }
 
 impl Task {
@@ -89,6 +106,7 @@ impl Task {
                 eta_secs: None,
                 connections: 0,
                 error: None,
+                retry_at: None,
                 added_at,
                 finished_at: None,
             },
@@ -98,6 +116,8 @@ impl Task {
             move_name: None,
             page: None,
             cookies_refreshed: false,
+            retries: 0,
+            retried_from: 0,
         }
     }
 }
@@ -117,6 +137,9 @@ pub struct Table {
     /// Failed with 401 or 403 (the value): the poller asks the browser for
     /// new cookies, then the user for a login.
     refused: HashMap<String, u16>,
+    /// Failed partway for a reason that may pass: the poller sets a time to
+    /// try again.
+    interrupted: HashSet<String>,
     stats: GlobalStats,
 }
 
@@ -171,6 +194,12 @@ pub async fn run_poller(shared: Arc<Shared>) {
         let refused = std::mem::take(&mut shared.tasks.lock().unwrap().refused);
         for (id, status) in refused {
             tokio::spawn(after_refusal(shared.clone(), id, status));
+        }
+        let interrupted = std::mem::take(&mut shared.tasks.lock().unwrap().interrupted);
+        for id in interrupted {
+            if let Some((at, wait)) = schedule_retry(&shared, &id) {
+                tokio::spawn(retry_later(shared.clone(), id, at, wait));
+            }
         }
     }
 }
@@ -337,6 +366,11 @@ async fn apply(
             .filter(|_| {
                 task.row.status == TaskStatus::Failed && before.status != TaskStatus::Failed && !task.media
             });
+            let interrupted = task.row.status == TaskStatus::Failed
+                && before.status != TaskStatus::Failed
+                && !task.media
+                && task.row.done_bytes > 0
+                && is_temporary(status);
             if task.row != before || is_new {
                 changed.push(task.row.clone());
                 if is_new || task.row.status != before.status || task.row.name != before.name {
@@ -353,6 +387,9 @@ async fn apply(
             }
             if let Some(code) = refused {
                 table.refused.insert(id.to_string(), code);
+            }
+            if interrupted {
+                table.interrupted.insert(id.to_string());
             }
         }
         for id in missing {
@@ -506,6 +543,9 @@ fn update_from_engine(task: &mut Task, status: &Value, settings: &Settings, now:
         ),
         _ => None,
     };
+    if row.status != TaskStatus::Failed {
+        row.retry_at = None;
+    }
     if row.status != TaskStatus::Downloading {
         row.speed = 0;
         row.connections = 0;
@@ -1025,6 +1065,7 @@ pub async fn resume(shared: &Shared, ids: Vec<String>) -> Result<(), String> {
         for task in &targets {
             if let Some(task) = table.tasks.get_mut(&task.row.id) {
                 task.cookies_refreshed = false;
+                task.retries = 0;
             }
         }
     }
@@ -1202,6 +1243,73 @@ impl Progress {
             ],
         )?;
         Ok(())
+    }
+}
+
+/// Engine failures that may pass on their own: a timeout, a dropped or
+/// refused connection, a server error, a name that did not resolve, or a
+/// busy server (503 or 429).
+fn is_temporary(status: &Value) -> bool {
+    matches!(status["errorCode"].as_str(), Some("2" | "5" | "6" | "19" | "29"))
+}
+
+/// Sets when a download that failed partway is tried again, or leaves it
+/// failed after MAX_RETRIES tries that got no further.
+fn schedule_retry(shared: &Shared, id: &str) -> Option<(i64, Duration)> {
+    let (row, at, wait) = {
+        let mut table = shared.tasks.lock().unwrap();
+        let task = table.tasks.get_mut(id)?;
+        if task.row.done_bytes > task.retried_from {
+            task.retries = 0;
+            task.retried_from = task.row.done_bytes;
+        }
+        if task.retries >= MAX_RETRIES {
+            return None;
+        }
+        let wait = RETRY_WAITS[(task.retries as usize).min(RETRY_WAITS.len() - 1)];
+        task.retries += 1;
+        let at = now_ms() + wait.as_millis() as i64;
+        task.row.retry_at = Some(at);
+        (task.row.clone(), at, wait)
+    };
+    shared.listener.rows_changed(vec![row]);
+    Some((at, wait))
+}
+
+/// Tries a download again when its time comes, keeping what is on disk,
+/// unless the user has started or removed it meanwhile.
+async fn retry_later(shared: Arc<Shared>, id: String, at: i64, wait: Duration) {
+    let mut shutdown = shared.shutdown.subscribe();
+    tokio::select! {
+        _ = tokio::time::sleep(wait) => {}
+        _ = crate::stopped(&mut shutdown) => return,
+    }
+    let due = |task: &Task| task.row.status == TaskStatus::Failed && task.row.retry_at == Some(at);
+    let Some(task) = select(&shared, std::slice::from_ref(&id), due).pop() else {
+        return;
+    };
+    let Ok(rpc) = shared.wait_rpc().await else {
+        return;
+    };
+    let options = readd_options(&rpc, &task).await;
+    let progress = saved_progress(&shared, &id);
+    let restarted = restart(&shared, &rpc, &task, &task.row.url, options, progress).await.is_ok();
+    let row = {
+        let mut table = shared.tasks.lock().unwrap();
+        let Some(task) = table.tasks.get_mut(&id).filter(|task| due(task)) else {
+            return;
+        };
+        task.row.retry_at = None;
+        // Queued in the engine again, so a quick new failure counts as one.
+        if restarted {
+            task.row.status = TaskStatus::Queued;
+            task.row.error = None;
+        }
+        task.row.clone()
+    };
+    shared.listener.rows_changed(vec![row]);
+    if restarted {
+        finish_action(&shared, &rpc, std::slice::from_ref(&task)).await;
     }
 }
 
