@@ -4,12 +4,7 @@ import UniformTypeIdentifiers
 
 @MainActor
 enum Format {
-    private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.allowsNonnumericFormatting = false
-        return formatter
-    }()
+    private static let units = ["KB", "MB", "GB", "TB"]
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -19,8 +14,16 @@ enum Format {
         return formatter
     }()
 
+    /// "12.34 MB": two decimals, in the 1000-byte units Finder uses.
     static func bytes(_ count: UInt64) -> String {
-        byteFormatter.string(fromByteCount: Int64(clamping: count))
+        guard count >= 1000 else { return "\(count) bytes" }
+        var value = Double(count) / 1000
+        var unit = 0
+        while value >= 1000 && unit < units.count - 1 {
+            value /= 1000
+            unit += 1
+        }
+        return value.formatted(.number.precision(.fractionLength(2))) + " " + units[unit]
     }
 
     static func size(_ task: TaskRow) -> String {
@@ -31,8 +34,10 @@ enum Format {
         bytesPerSecond > 0 ? bytes(bytesPerSecond) + "/s" : ""
     }
 
+    /// "44.53%"; rounded down, so 100.00% means done.
     static func percent(_ task: TaskRow) -> String {
-        task.progress < 0 ? "" : "\(Int((task.progress * 100).rounded(.down)))%"
+        guard task.progress >= 0 else { return "" }
+        return ((task.progress * 10_000).rounded(.down) / 100).formatted(.number.precision(.fractionLength(2))) + "%"
     }
 
     static func eta(_ seconds: UInt64?) -> String {

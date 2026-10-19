@@ -73,7 +73,7 @@ final class ProgressCellView: NSTableCellView {
             label.leadingAnchor.constraint(equalTo: bar.trailingAnchor, constant: 6),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.widthAnchor.constraint(equalToConstant: 36),
+            label.widthAnchor.constraint(equalToConstant: 48),
         ])
     }
 

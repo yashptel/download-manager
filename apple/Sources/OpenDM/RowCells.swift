@@ -153,7 +153,7 @@ final class CardCellView: NSTableCellView {
         statusText.toolTip = task.status == .failed ? task.error : nil
         bar.update(progress: max(task.progress, 0), color: look.color)
 
-        let percent = task.progress >= 0 ? "\(Int((task.progress * 100).rounded(.down)))%" : nil
+        let percent = task.progress >= 0 ? Format.percent(task) : nil
         let size: String? = switch (task.doneBytes, task.totalBytes) {
         case (_, 0) where task.doneBytes > 0: Format.bytes(task.doneBytes)
         case (_, 0): nil

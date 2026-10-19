@@ -9,9 +9,7 @@ internal static class Format
     public static string Bytes(ulong count)
     {
         var (value, unit) = Scaled(count);
-        return unit == 0
-            ? $"{count} B"
-            : value.ToString(value < 10 ? "0.0" : "0", CultureInfo.CurrentCulture) + " " + Units[unit];
+        return unit == 0 ? $"{count} B" : value.ToString("0.00", CultureInfo.CurrentCulture) + " " + Units[unit];
     }
 
     /// <summary>
@@ -21,7 +19,7 @@ internal static class Format
     public static double Displayed(ulong count)
     {
         var (value, unit) = Scaled(count);
-        return unit == 0 ? count : Math.Round(value, value < 10 ? 1 : 0) * Math.Pow(1024, unit);
+        return unit == 0 ? count : Math.Round(value, 2) * Math.Pow(1024, unit);
     }
 
     private static (double Value, int Unit) Scaled(ulong count)
@@ -40,7 +38,9 @@ internal static class Format
 
     public static string Speed(ulong bytesPerSecond) => bytesPerSecond > 0 ? Bytes(bytesPerSecond) + "/s" : "";
 
-    public static string Percent(TaskRow row) => row.Progress < 0 ? "" : $"{(int)Math.Floor(row.Progress * 100)}%";
+    /// <summary>"44.53%"; rounded down, so 100.00% means done.</summary>
+    public static string Percent(TaskRow row) =>
+        row.Progress < 0 ? "" : (Math.Floor(row.Progress * 10_000) / 100).ToString("0.00", CultureInfo.CurrentCulture) + "%";
 
     public static string Eta(ulong? seconds) => seconds switch
     {
@@ -61,7 +61,7 @@ internal static class Format
         _ => $"{seconds / 86_400} {(seconds / 86_400 == 1 ? "day" : "days")} {seconds % 86_400 / 3600} hr",
     };
 
-    /// <summary>"88.1 MB of 209.7 MB", or what is known so far.</summary>
+    /// <summary>"88.12 MB of 209.70 MB", or what is known so far.</summary>
     public static string Amount(TaskRow row) => (row.DoneBytes, row.TotalBytes) switch
     {
         (0, 0) => "",
@@ -99,7 +99,7 @@ internal static class Format
         _ => $"{seconds / 3600} hr {seconds % 3600 / 60} min left",
     };
 
-    /// <summary>One line describing where a download stands: "82 MB of 209 MB · 258 KB/s · 8 min left".</summary>
+    /// <summary>One line describing where a download stands: "82.41 MB of 209.70 MB · 258.03 KB/s · 8 min left".</summary>
     public static string Detail(TaskRow row) => Join(row.Status switch
     {
         TaskStatus.Downloading => [Amount(row), Speed(row.Speed), Remaining(row.EtaSecs)],
@@ -117,7 +117,7 @@ internal static class Format
         _ => Title(row.Status),
     };
 
-    /// <summary>A card's size line: "40% · 82 MB / 209 MB"; "Not started" while waiting with nothing yet.</summary>
+    /// <summary>A card's size line: "39.30% · 82.41 MB / 209.70 MB"; "Not started" while waiting with nothing yet.</summary>
     public static string CardAmount(TaskRow row)
     {
         if (row.Status == TaskStatus.Complete) return Size(row);

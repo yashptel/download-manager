@@ -80,7 +80,7 @@
                     <Grid Grid.Column="2" ColumnSpacing="8" VerticalAlignment="Center">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="36" />
+                            <ColumnDefinition Width="44" />
                         </Grid.ColumnDefinitions>
                         <!-- Drawn like the Fluent ProgressBar. A ProgressBar re-runs its
                              template and visual states on every value change, which made
