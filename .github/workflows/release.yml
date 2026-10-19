@@ -24,6 +24,11 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    # ARM64 is cross-compiled: the runner has MSVC's ARM64 tools, which Native
+    # AOT and the Rust core both link with.
+    strategy:
+      matrix:
+        arch: [x64, arm64]
     env:
       HAS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
     steps:
@@ -43,7 +48,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-windows-${{ hashFiles('Cargo.lock') }}
+          key: cargo-windows-${{ matrix.arch }}-${{ hashFiles('Cargo.lock') }}
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
       - name: Import the signing certificate
@@ -61,11 +66,11 @@ jobs:
           "OPENDM_SIGN_CERT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
       - name: Build the installer
         shell: pwsh
-        run: scripts/package-windows.ps1
+        run: scripts/package-windows.ps1 -Arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v7
         with:
-          name: windows
-          path: build/windows/OpenDM-*-setup.exe
+          name: windows-${{ matrix.arch }}
+          path: build/windows/OpenDM-*-${{ matrix.arch }}-setup.exe
           if-no-files-found: error
 
   macos:
