@@ -313,6 +313,13 @@ pub struct DownloadCore {
     supervisor: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
+/// Whether another OpenDM already runs on this data folder. Checked before
+/// the core opens, so a duplicate launch quits without starting an engine.
+#[uniffi::export]
+pub fn another_instance_running(data_dir: String) -> bool {
+    browser::owner_alive(std::path::Path::new(&data_dir))
+}
+
 #[uniffi::export]
 impl DownloadCore {
     /// Opens history and settings. The engine starts with `start`.

@@ -66,6 +66,26 @@ pub async fn serve(shared: Arc<Shared>) {
     }
 }
 
+/// Whether an OpenDM already serves the browser for this data folder. A
+/// launch that finds one is a duplicate (an install next to a build, or a
+/// second launch) and hands over to it instead of running a second engine on
+/// the same files.
+pub fn owner_alive(data_dir: &std::path::Path) -> bool {
+    let endpoint = opendm_host::endpoint(data_dir);
+    #[cfg(unix)]
+    {
+        std::os::unix::net::UnixStream::connect(endpoint).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        match std::fs::OpenOptions::new().read(true).write(true).open(endpoint) {
+            Ok(_) => true,
+            // Busy means a server exists with no free instance right now.
+            Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+        }
+    }
+}
+
 #[cfg(unix)]
 async fn listen(shared: Arc<Shared>) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;

@@ -8,12 +8,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: MainWindowController?
     private var statusItem: StatusItemController?
     private var updateCheck: Task<Void, Never>?
+    /// Posted by a duplicate launch so the running OpenDM comes forward.
+    private static let showNotification = Notification.Name("org.opendm.show-main-window")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
+        let config = Self.config()
+        if anotherInstanceRunning(dataDir: config.dataDir) {
+            if !CommandLine.arguments.contains("--background") {
+                DistributedNotificationCenter.default().postNotificationName(Self.showNotification, object: nil, userInfo: nil, deliverImmediately: true)
+            }
+            NSApp.terminate(nil)
+            return
+        }
+        DistributedNotificationCenter.default().addObserver(forName: Self.showNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                NSApp.activate(ignoringOtherApps: true)
+                self?.mainWindow?.show()
+            }
+        }
         let core: DownloadCore
         do {
-            core = try DownloadCore(config: Self.config(), listener: store.listener)
+            core = try DownloadCore(config: config, listener: store.listener)
         } catch {
             let alert = NSAlert()
             alert.alertStyle = .critical

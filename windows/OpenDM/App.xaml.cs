@@ -21,10 +21,17 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         dispatcher = DispatcherQueue.GetForCurrentThread();
+        var config = Config();
+        // A second OpenDM on the same data folder would start a second engine on the same files.
+        if (OpendmCoreMethods.AnotherInstanceRunning(config.DataDir))
+        {
+            Exit();
+            return;
+        }
         var store = new DownloadStore(dispatcher);
         try
         {
-            core = new DownloadCore(Config(), store.Listener);
+            core = new DownloadCore(config, store.Listener);
         }
         catch (Exception error)
         {

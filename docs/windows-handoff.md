@@ -162,6 +162,14 @@ has "Refresh Download Address…" for one unfinished download
   (Developer mode, Load unpacked), confirm the host registry entries the app
   writes at launch, then try a captured download, the video button's quality
   menu on an HLS page (https://hlsjs.video-dev.org/demo/) and on YouTube.
+- **Second launch.** `App.xaml.cs` asks the core
+  (`OpendmCoreMethods.AnotherInstanceRunning`, a top-level function in the
+  generated bindings) whether an OpenDM already serves the data folder and
+  exits if so, written here without a Windows build. Confirm the name the
+  generator produced, and that a second launch exits at once. Bringing the
+  running instance's window forward on a second launch is still to do
+  (Windows App SDK's `AppInstance.FindOrRegisterForKey` with activation
+  redirection is the usual way).
 - `cargo test --workspace` and `cargo clippy --workspace --all-targets` pass on
   Windows.
 
