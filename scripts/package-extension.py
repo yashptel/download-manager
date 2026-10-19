@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Packages OpenDM Connect for the browser stores:
 
-- build/extension/opendm-connect-<version>.zip for addons.mozilla.org and Edge
-  Add-ons, and
+- build/extension/opendm-connect-<version>.zip for Edge Add-ons,
+- build/extension/opendm-connect-<version>-firefox.zip for addons.mozilla.org,
+  without the service worker key Firefox ignores, and
 - build/extension/opendm-connect-<version>-chrome.zip for the Chrome Web
   Store, which leaves videos on YouTube alone, as that store's policy asks.
 
@@ -33,9 +34,12 @@ files = sorted(
 )
 
 
-def package(target, blocked=None):
+def package(target, blocked=None, firefox=False):
+    own = json.loads(json.dumps(manifest))
+    if firefox:
+        own["background"].pop("service_worker", None)
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
+        archive.writestr("manifest.json", json.dumps(own, indent=2) + "\n")
         for path in files:
             name = path.relative_to(source).as_posix()
             data = path.read_bytes()
@@ -49,3 +53,4 @@ for name in ("background.js", "content.js"):
     assert (source / name).read_text(encoding="utf-8").count(BLOCKED_LINE) == 1, f"{name} lacks {BLOCKED_LINE}"
 package(out / f"opendm-connect-{manifest['version']}.zip")
 package(out / f"opendm-connect-{manifest['version']}-chrome.zip", CHROME_BLOCKED)
+package(out / f"opendm-connect-{manifest['version']}-firefox.zip", firefox=True)
