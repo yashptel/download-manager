@@ -580,12 +580,13 @@ private struct ConnectionSettings: View {
             Section {
                 LabeledContent("Tries per server") { NumberField(value: model.number(\.maxTries), unit: "tries") }
                 LabeledContent("Wait between tries") { NumberField(value: model.number(\.retryWait), unit: "sec") }
+                LabeledContent("Try a failed download again on its own") { NumberField(value: model.number(\.autoRetries), unit: "times") }
                 LabeledContent("Give up on a silent connection after") { NumberField(value: model.number(\.timeout), unit: "sec") }
                 LabeledContent("Give up connecting after") { NumberField(value: model.number(\.connectTimeout), unit: "sec") }
             } header: {
                 Text("Retries")
             } footer: {
-                Note("0 tries keeps trying until you stop the download.")
+                Note("0 tries keeps trying until you stop the download. A download that fails partway is tried again after 30 sec, then 1, 2, 5 and 10 min, until it has been tried that many times without getting further; 0 times turns this off.")
             }
             Section {
                 TextField("Proxy", text: $model.settings.proxy, prompt: Text(verbatim: "http://user:password@host:8080"))

@@ -97,6 +97,7 @@ public sealed partial class SettingsWindow : Window
         Text(MinSplitBox, settings.MinSplitSize, (s, text) => s with { MinSplitSize = text.Trim() });
         Number(TriesBox, settings.MaxTries, (s, n) => s with { MaxTries = (uint)n });
         Number(RetryWaitBox, settings.RetryWait, (s, n) => s with { RetryWait = (uint)n });
+        Number(AutoRetriesBox, settings.AutoRetries, (s, n) => s with { AutoRetries = (uint)n });
         Number(TimeoutBox, settings.Timeout, (s, n) => s with { Timeout = (uint)n });
         Number(ConnectTimeoutBox, settings.ConnectTimeout, (s, n) => s with { ConnectTimeout = (uint)n });
         Text(ProxyBox, settings.Proxy, (s, text) => s with { Proxy = text.Trim() });

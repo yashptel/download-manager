@@ -333,6 +333,16 @@
                     <Border Style="{StaticResource Card}">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Try a failed download again on its own" Style="{StaticResource CardTitle}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Name="AutoRetriesBox" Style="{StaticResource Number}" AutomationProperties.Name="Try a failed download again on its own, times" />
+                                <TextBlock Style="{StaticResource Unit}" Text="times" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <TextBlock Text="Give up on a silent connection after" Style="{StaticResource CardTitle}" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                 <NumberBox x:Name="TimeoutBox" Style="{StaticResource Number}" AutomationProperties.Name="Give up on a silent connection after, in seconds" />
@@ -350,7 +360,7 @@
                             </StackPanel>
                         </Grid>
                     </Border>
-                    <TextBlock Style="{StaticResource Note}" Text="0 tries keeps trying until you stop the download." />
+                    <TextBlock Style="{StaticResource Note}" Text="0 tries keeps trying until you stop the download. A download that fails partway is tried again after 30 sec, then 1, 2, 5 and 10 min, until it has been tried that many times without getting further; 0 times turns this off." />
 
                     <TextBlock Text="Proxy" Style="{StaticResource Section}" />
                     <Border Style="{StaticResource Card}">
