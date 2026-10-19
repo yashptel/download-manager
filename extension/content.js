@@ -63,7 +63,6 @@
   // As in background.js: empty here, filled in by the Chrome Web Store package.
   const MEDIA_BLOCKED_HOSTS = [];
   const blockedHere = MEDIA_BLOCKED_HOSTS.some((blocked) => location.hostname === blocked || location.hostname.endsWith("." + blocked));
-  const videos = document.getElementsByTagName("video"); // Live, so cheap to re-read.
   let host = null;
   let button = null;
   let menu = null;
@@ -73,14 +72,21 @@
   let busy = false;
   let prefetched = "";
 
-  function videoAt(x, y) {
-    for (const video of videos) {
+  /** The video large enough to matter under the pointer. The event's path
+   * reaches into open shadow roots, where players built as web components
+   * (Reddit's) keep their video and the document's own list does not. */
+  function videoAt(event) {
+    const under = (video) => {
       const box = video.getBoundingClientRect();
-      if (box.width >= 200 && box.height >= 120 && x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) {
-        return video;
-      }
+      return box.width >= 200 && box.height >= 120 && event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+    };
+    for (const node of event.composedPath()) {
+      if (node instanceof HTMLVideoElement && under(node)) return node;
+      // The pointer is often over the player's controls, not the video itself.
+      const inside = node instanceof Element && node.shadowRoot ? [...node.shadowRoot.querySelectorAll("video")].find(under) : null;
+      if (inside) return inside;
     }
-    return null;
+    return [...document.getElementsByTagName("video")].find(under) ?? null;
   }
 
   const STYLE = `
@@ -296,9 +302,9 @@
     "mousemove",
     (event) => {
       const now = performance.now();
-      if (blockedHere || now - lastMove < 120 || videos.length === 0) return;
+      if (blockedHere || now - lastMove < 120) return;
       lastMove = now;
-      const video = videoAt(event.clientX, event.clientY);
+      const video = videoAt(event);
       if (video) show(video);
     },
     { capture: true, passive: true },
