@@ -525,4 +525,62 @@ mod tests {
             parse_item(&json!({ "url": "https://a.b/c", "filenameSource": "guess" }));
         assert_eq!(unknown_source.unwrap().filename_source, None);
     }
+
+    #[test]
+    fn a_collection_joins_files_in_pieces_youtube_serves_quickly() {
+        let video_url = "https://rr1---sn-x.googlevideo.com/videoplayback?itag=313&clen=25000000";
+        let tracks = json!([
+            { "type": "video", "url": video_url, "size": 25_000_000 },
+            { "type": "audio", "url": "https://cdn.example.com/audio.m4a", "size": 3_000_000 },
+            { "type": "audio", "url": "https://cdn.example.com/second.m4a", "size": 1 },
+            { "type": "subtitle", "url": "https://cdn.example.com/s.vtt" },
+        ]);
+        let download = parse_item(&json!({
+            "url": video_url,
+            "mediaKind": "collection",
+            "mediaManifest": tracks.to_string(),
+            "mediaVideo": "video",
+            "mediaAudio": "audio",
+            "mediaFormat": "mkv",
+        }))
+        .unwrap();
+        assert_eq!(download.media_kind.as_deref(), Some("collection"));
+        let mut options = serde_json::Map::new();
+        download.engine_options(&mut options);
+        assert_eq!(options["media"], "collection");
+        assert_eq!(options["media-video"], "video");
+        assert_eq!(options["media-audio"], "audio");
+        let input: Value = serde_json::from_str(options["media-input"].as_str().unwrap()).unwrap();
+        assert_eq!(input["manifests"], json!([]));
+        assert_eq!(input["keys"], json!([]));
+        let tracks = input["tracks"].as_array().unwrap();
+        // One file per type; the subtitle and the second audio file are not for the engine.
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0]["id"], "video");
+        assert_eq!(tracks[0]["type"], "video");
+        // YouTube serves a whole file at a crawl and a piece of up to 10 MiB at full speed.
+        assert_eq!(
+            tracks[0]["urls"],
+            json!([
+                format!("{video_url}&range=0-10485759"),
+                format!("{video_url}&range=10485760-20971519"),
+                format!("{video_url}&range=20971520-24999999"),
+            ])
+        );
+        assert_eq!(tracks[1]["id"], "audio");
+        assert_eq!(tracks[1]["urls"], json!(["https://cdn.example.com/audio.m4a"]));
+    }
+
+    #[test]
+    fn a_collection_without_files_the_engine_can_join_is_not_a_download() {
+        for tracks in [
+            json!([]),
+            json!([{ "type": "video", "url": "javascript:alert(1)" }]),
+            json!([{ "type": "picture", "url": "https://a.b/c" }]),
+            json!("nonsense"),
+        ] {
+            let item = json!({ "url": "https://a.b/c", "mediaKind": "collection", "mediaManifest": tracks.to_string() });
+            assert!(parse_item(&item).is_none(), "{tracks}");
+        }
+    }
 }

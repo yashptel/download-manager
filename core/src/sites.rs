@@ -354,7 +354,7 @@ mod tests {
                 { "format_id": "hls-1", "protocol": "m3u8_native", "url": "https://x/1.m3u8", "manifest_url": "https://x/master.m3u8" },
                 { "format_id": "hls-2", "protocol": "m3u8_native", "url": "https://x/2.m3u8", "manifest_url": "https://x/master.m3u8" },
                 { "format_id": "140", "protocol": "https", "url": "https://x/a.m4a", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "filesize": 100,
-                  "http_headers": { "User-Agent": "UA" } },
+                  "language": "en-US", "language_preference": 10, "http_headers": { "User-Agent": "UA" } },
                 { "format_id": "drm", "protocol": "https", "url": "https://x/d.mp4", "has_drm": true },
             ],
         });
@@ -366,6 +366,9 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0]["id"], "140");
         assert_eq!(files[0]["size"], 100);
+        assert_eq!(files[0]["language"], "en-US");
+        // The video's own language ranks highest; dubbed ones rank below.
+        assert_eq!(files[0]["preference"], 10);
         assert_eq!(files[0]["headers"], json!([{ "name": "User-Agent", "value": "UA" }]));
     }
 
