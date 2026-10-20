@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "OpenDM Connect",
   "description": "Sends downloads, links and videos from the browser to the OpenDM download manager.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsmYRc+x0Y9YOrmvAuDqmfifqUpbKuT/qGdlXtYj2LIKx41ebyJdavuJkKYXFkNPmIE19dxXSmQOD35bNGb+15OZD05tlnjkjEEOjjeWlx4ZX5r8x3Qs6L4I4mGU0EqegcqSNCOGtQ10ROGgTRyLu9KrMiX1y8sVxYDmtVVHln2qXlWkTpSXm9L30D6KrI11PxXcDevIxfXIF0EwIuvL5gCago1gUznNHQ/WauA/oXa5OH8VQdqLDAP1Euvb6+AW/W21Yx3SkPMMSoS7S6oT6gHG6AosbabwU67tC08jJfwh1RPRWW5CqNIpo4HSw732f+XuOqduJ1buclm4ytuwmxwIDAQAB",
   "icons": {
     "16": "icons/icon-16.png",

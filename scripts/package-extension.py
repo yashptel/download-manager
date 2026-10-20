@@ -36,8 +36,9 @@ files = sorted(
 
 def package(target, blocked=None, firefox=False):
     own = json.loads(json.dumps(manifest))
-    if firefox:
-        own["background"].pop("service_worker", None)
+    # Each family reads its own background entry; Edge refuses a package
+    # that carries Firefox's as well.
+    own["background"].pop("service_worker" if firefox else "scripts", None)
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(own, indent=2) + "\n")
         for path in files:
