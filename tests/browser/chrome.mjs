@@ -267,6 +267,33 @@ try {
   await page.click(shadowMain.x, shadowMain.y);
   await sleep(300);
 
+  // 6c. The pill's close button hides it on this page; the popup's switch turns it off everywhere.
+  const pillShown = () => page.evaluate("getComputedStyle(document.querySelector('opendm-connect')).display");
+  const hover = async (id) => {
+    const b = await page.evaluate("(() => { const e = document.getElementById('" + id + "'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()");
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: b.x + 5, y: b.y + 5 });
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: b.x + b.w / 2, y: b.y + b.h / 2 });
+    await sleep(400);
+  };
+  await hover("shadow-player");
+  const [closer] = await page.find("close");
+  if (closer) await page.click(closer.x, closer.y);
+  await sleep(300);
+  check("the close button hides the video button", Boolean(closer) && (await pillShown()) === "none", closer ? await pillShown() : "no close button");
+  await sleep(200);
+  await hover("video");
+  check("it stays hidden on the same page", (await pillShown()) === "none", await pillShown());
+  await page.send("Page.reload");
+  await sleep(1500);
+  await sw.evaluate("chrome.storage.local.set({ videoButton: false }).then(() => 'ok')");
+  await hover("video");
+  const offState = await page.evaluate("(() => { const h = document.querySelector('opendm-connect'); return h ? getComputedStyle(h).display : 'none'; })()");
+  check("the popup's switch turns the video button off", offState === "none", offState);
+  await sw.evaluate("chrome.storage.local.set({ videoButton: true }).then(() => 'ok')");
+  await sleep(200);
+  await hover("video");
+  check("and back on", (await pillShown()) === "block", await pillShown());
+
   // 7. "Download all links" hands over every link on the page.
   const links = await sw.evaluate(
     "chrome.scripting.executeScript({ target: { tabId: " + tabId + " }, func: collectLinks, args: [false] }).then(([r]) => r.result)",
