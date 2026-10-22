@@ -65,6 +65,7 @@
   const blockedHere = MEDIA_BLOCKED_HOSTS.some((blocked) => location.hostname === blocked || location.hostname.endsWith("." + blocked));
   let host = null;
   let button = null;
+  let closeButton = null;
   let menu = null;
   let current = null;
   let hideTimer = 0;
@@ -73,6 +74,16 @@
   let asked = ""; // The page the button's open question is about.
   let ticket = 0;
   let prefetched = "";
+  let videoButtonOn = true;
+  let closedOn = "";
+  const pageUrl = () => location.href.split("#")[0];
+
+  api.storage.local.get("videoButton").then((stored) => (videoButtonOn = stored.videoButton !== false));
+  api.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !("videoButton" in changes)) return;
+    videoButtonOn = changes.videoButton.newValue !== false;
+    if (!videoButtonOn) dismiss();
+  });
 
   /** The video large enough to matter under the pointer. The event's path
    * reaches into open shadow roots, where players built as web components
@@ -97,21 +108,27 @@
       font: 500 12.5px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    .main {
-      display: flex; align-items: center; gap: 6px; margin-left: auto;
-      height: 30px; padding: 0 12px 0 10px; border: 0; border-radius: 15px;
-      font: inherit; color: #fff; background: rgba(28, 28, 30, 0.62);
+    .main, .close {
+      height: 30px; border: 0; color: #fff; background: rgba(28, 28, 30, 0.62);
       box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.28) inset, 0 4px 14px rgba(0, 0, 0, 0.28);
       -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6);
       cursor: pointer; opacity: 0; transform: translateY(-4px);
       transition: opacity 0.16s ease-out, transform 0.16s ease-out, background 0.12s;
     }
-    .main.shown { opacity: 1; transform: none; }
+    .main {
+      display: flex; align-items: center; gap: 6px; margin-left: auto;
+      padding: 0 12px 0 10px; border-radius: 15px; font: inherit;
+    }
+    .close {
+      width: 30px; margin-left: 4px; padding: 0; border-radius: 50%; font: inherit;
+    }
+    .main.shown, .close.shown { opacity: 1; transform: none; }
     .main:hover, .main.open { background: rgba(10, 132, 255, 0.85); }
-    .main:active { transform: scale(0.97); }
+    .close:hover { background: rgba(255, 255, 255, 0.22); }
+    .main:active, .close:active { transform: scale(0.97); }
     svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
     .menu {
-      position: absolute; top: 36px; right: 0; width: 300px; max-height: min(62vh, 440px); overflow-y: auto;
+      position: absolute; top: 36px; right: 34px; width: 300px; max-height: min(62vh, 440px); overflow-y: auto;
       padding: 5px; border-radius: 12px; color: #fff; background: rgba(28, 28, 30, 0.88);
       box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.22) inset, 0 12px 34px rgba(0, 0, 0, 0.4);
       -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8);
@@ -133,7 +150,7 @@
     .detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255, 255, 255, 0.68); font-weight: 400; font-variant-numeric: tabular-nums; }
     .option:hover .detail, .option:focus-visible .detail { color: rgba(255, 255, 255, 0.9); }
     .note { padding: 8px 9px; color: rgba(255, 255, 255, 0.75); font-weight: 400; }
-    @media (prefers-reduced-motion: reduce) { .main, .menu { transition: none; animation: none; } }
+    @media (prefers-reduced-motion: reduce) { .main, .close, .menu { transition: none; animation: none; } }
   `;
 
   function element(tag, className, text) {
@@ -160,10 +177,21 @@
     path.setAttribute("d", "M8 2v8M4.5 6.8 8 10.3l3.5-3.5M3 13.5h10");
     svg.append(path);
     button.append(svg, element("span", "", "Download video"));
+    closeButton = element("button", "close");
+    closeButton.type = "button";
+    closeButton.title = "Hide on this page";
+    closeButton.setAttribute("aria-label", "Hide on this page");
+    const closeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    closeSvg.setAttribute("viewBox", "0 0 16 16");
+    const closePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    closePath.setAttribute("d", "M5 5l6 6M11 5l-6 6");
+    closeSvg.append(closePath);
+    closeButton.append(closeSvg);
     const row = element("div", "row");
-    row.append(button);
+    row.append(button, closeButton);
     shadow.append(style, row);
     button.addEventListener("click", onClick);
+    closeButton.addEventListener("click", onClose);
     // Keep the page's player from treating clicks here as its own.
     for (const type of ["click", "mousedown", "mouseup", "pointerdown", "pointerup", "dblclick", "wheel", "keydown"]) {
       row.addEventListener(type, (event) => event.stopPropagation());
@@ -191,7 +219,10 @@
     current = video;
     place();
     host.style.display = "block";
-    requestAnimationFrame(() => button.classList.add("shown"));
+    requestAnimationFrame(() => {
+      button.classList.add("shown");
+      closeButton.classList.add("shown");
+    });
     clearTimeout(hideTimer);
     hideTimer = setTimeout(hide, 2500);
   }
@@ -199,11 +230,31 @@
   function hide() {
     if (!host || busy || menu) return;
     button.classList.remove("shown");
+    closeButton.classList.remove("shown");
     hideTimer = setTimeout(() => (host.style.display = "none"), 160);
   }
 
   function label(text) {
     button.querySelector("span").textContent = text;
+  }
+
+  /** Hides the button at once, dropping any question it has open. */
+  function dismiss() {
+    if (!host) return;
+    ticket++;
+    busy = false;
+    label("Download video");
+    if (menu) closeMenu();
+    clearTimeout(hideTimer);
+    button.classList.remove("shown");
+    closeButton.classList.remove("shown");
+    host.style.display = "none";
+  }
+
+  function onClose(event) {
+    event.preventDefault();
+    closedOn = pageUrl();
+    dismiss();
   }
 
   const PLAYLIST = /(^|\/)[^/?#]*\.(m3u8|mpd)(?:[?#]|$)/i;
@@ -345,6 +396,7 @@
         label("Download video");
         if (menu) closeMenu();
       }
+      if (!videoButtonOn || closedOn === pageUrl()) return;
       const video = videoAt(event);
       if (video) show(video);
     },

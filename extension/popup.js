@@ -4,6 +4,14 @@ const api = globalThis.browser ?? globalThis.chrome;
 const $ = (id) => document.getElementById(id);
 let tabId = -1;
 
+api.storage.local.get("videoButton").then((stored) => {
+  $("video-button").checked = stored.videoButton !== false;
+});
+
+$("video-button").addEventListener("change", (event) => {
+  api.storage.local.set({ videoButton: event.target.checked });
+});
+
 const STATUS = {
   connected: (state) => "Connected" + (state.version ? " · " + state.version : ""),
   "not-running": () => "OpenDM is not running",
