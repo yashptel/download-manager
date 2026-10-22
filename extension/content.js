@@ -66,6 +66,7 @@
   let host = null;
   let button = null;
   let closeButton = null;
+  let pill = null;
   let menu = null;
   let current = null;
   let hideTimer = 0;
@@ -108,27 +109,29 @@
       font: 500 12.5px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
-    .main, .close {
-      height: 30px; border: 0; color: #fff; background: rgba(28, 28, 30, 0.62);
+    .pill {
+      display: flex; align-items: center; margin-left: auto; height: 30px; overflow: hidden;
+      border-radius: 15px; color: #fff; background: rgba(28, 28, 30, 0.62);
       box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.28) inset, 0 4px 14px rgba(0, 0, 0, 0.28);
       -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6);
-      cursor: pointer; opacity: 0; transform: translateY(-4px);
+      opacity: 0; transform: translateY(-4px);
       transition: opacity 0.16s ease-out, transform 0.16s ease-out, background 0.12s;
     }
-    .main {
-      display: flex; align-items: center; gap: 6px; margin-left: auto;
-      padding: 0 12px 0 10px; border-radius: 15px; font: inherit;
+    .pill.shown { opacity: 1; transform: none; }
+    .pill:has(.main:hover), .pill.open { background: rgba(10, 132, 255, 0.85); }
+    .main, .close {
+      display: flex; align-items: center; height: 100%; border: 0;
+      font: inherit; color: inherit; background: transparent; cursor: pointer;
     }
-    .close {
-      width: 30px; margin-left: 4px; padding: 0; border-radius: 50%; font: inherit;
-    }
-    .main.shown, .close.shown { opacity: 1; transform: none; }
-    .main:hover, .main.open { background: rgba(10, 132, 255, 0.85); }
-    .close:hover { background: rgba(255, 255, 255, 0.22); }
-    .main:active, .close:active { transform: scale(0.97); }
+    .main { gap: 6px; padding: 0 9px 0 10px; }
+    .close { position: relative; justify-content: center; width: 28px; padding: 0 2px 0 0; color: rgba(255, 255, 255, 0.72); }
+    /* A short divider between the two parts of the pill. */
+    .close::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px; background: rgba(255, 255, 255, 0.24); }
+    .close:hover, .close:focus-visible { color: #fff; background: rgba(255, 255, 255, 0.16); outline: none; }
+    .close svg { width: 11px; height: 11px; stroke-width: 1.8; }
     svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
     .menu {
-      position: absolute; top: 36px; right: 34px; width: 300px; max-height: min(62vh, 440px); overflow-y: auto;
+      position: absolute; top: 36px; right: 0; width: 300px; max-height: min(62vh, 440px); overflow-y: auto;
       padding: 5px; border-radius: 12px; color: #fff; background: rgba(28, 28, 30, 0.88);
       box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.22) inset, 0 12px 34px rgba(0, 0, 0, 0.4);
       -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8);
@@ -150,7 +153,7 @@
     .detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255, 255, 255, 0.68); font-weight: 400; font-variant-numeric: tabular-nums; }
     .option:hover .detail, .option:focus-visible .detail { color: rgba(255, 255, 255, 0.9); }
     .note { padding: 8px 9px; color: rgba(255, 255, 255, 0.75); font-weight: 400; }
-    @media (prefers-reduced-motion: reduce) { .main, .close, .menu { transition: none; animation: none; } }
+    @media (prefers-reduced-motion: reduce) { .pill, .menu { transition: none; animation: none; } }
   `;
 
   function element(tag, className, text) {
@@ -187,8 +190,10 @@
     closePath.setAttribute("d", "M5 5l6 6M11 5l-6 6");
     closeSvg.append(closePath);
     closeButton.append(closeSvg);
+    pill = element("div", "pill");
+    pill.append(button, closeButton);
     const row = element("div", "row");
-    row.append(button, closeButton);
+    row.append(pill);
     shadow.append(style, row);
     button.addEventListener("click", onClick);
     closeButton.addEventListener("click", onClose);
@@ -219,18 +224,14 @@
     current = video;
     place();
     host.style.display = "block";
-    requestAnimationFrame(() => {
-      button.classList.add("shown");
-      closeButton.classList.add("shown");
-    });
+    requestAnimationFrame(() => pill.classList.add("shown"));
     clearTimeout(hideTimer);
     hideTimer = setTimeout(hide, 2500);
   }
 
   function hide() {
     if (!host || busy || menu) return;
-    button.classList.remove("shown");
-    closeButton.classList.remove("shown");
+    pill.classList.remove("shown");
     hideTimer = setTimeout(() => (host.style.display = "none"), 160);
   }
 
@@ -246,8 +247,7 @@
     label("Download video");
     if (menu) closeMenu();
     clearTimeout(hideTimer);
-    button.classList.remove("shown");
-    closeButton.classList.remove("shown");
+    pill.classList.remove("shown");
     host.style.display = "none";
   }
 
@@ -344,9 +344,9 @@
         menu.append(item);
       }
     }
-    button.classList.add("open");
+    pill.classList.add("open");
     button.setAttribute("aria-expanded", "true");
-    button.after(menu);
+    pill.after(menu);
     clearTimeout(hideTimer);
     addEventListener("mousedown", onOutside, true);
   }
@@ -354,7 +354,7 @@
   function closeMenu() {
     menu?.remove();
     menu = null;
-    button?.classList.remove("open");
+    pill?.classList.remove("open");
     button?.setAttribute("aria-expanded", "false");
     removeEventListener("mousedown", onOutside, true);
     hideTimer = setTimeout(hide, 1200);
