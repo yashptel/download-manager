@@ -20,7 +20,8 @@ fs.writeFileSync(DATA + "/settings.json", JSON.stringify({ download_dir: APP_DL,
 fs.rmSync(ROOT + "/site/go.json", { force: true });
 const prefs = {
   "devtools.debugger.remote-enabled": true, "devtools.chrome.enabled": true, "devtools.debugger.prompt-connection": false,
-  "browser.download.folderList": 2, "browser.download.dir": path.resolve(BROWSER_DL), "browser.download.useDownloadDir": true,
+  "browser.download.folderList": 2, "browser.download.dir": path.resolve(BROWSER_DL), // "Always ask where to save files", so a download the add-on misses shows a Save dialog.
+  "browser.download.useDownloadDir": false,
   "browser.download.alwaysOpenPanel": false, "browser.shell.checkDefaultBrowser": false,
   "browser.aboutwelcome.enabled": false, "datareporting.policy.dataSubmissionPolicyBypassNotification": true,
   "browser.startup.homepage_override.mstone": "ignore",
