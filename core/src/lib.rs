@@ -499,8 +499,13 @@ impl DownloadCore {
 
     /// Registers `host_path`, the bundled `opendm-host`, with the installed
     /// browsers so the extension can reach the app. Returns the manifests
-    /// written. Call it at every launch; it rewrites only what changed.
+    /// written. Call it at every launch; it rewrites only what changed. A
+    /// development copy with its own OPENDM_DATA_DIR leaves the browsers to
+    /// the installed app.
     pub fn install_browser_host(&self, host_path: String) -> Result<Vec<String>, CoreError> {
+        if std::env::var_os("OPENDM_DATA_DIR").is_some() {
+            return Ok(Vec::new());
+        }
         let written = opendm_host::install(&PathBuf::from(host_path), &self.shared.data_dir)?;
         Ok(written
             .iter()

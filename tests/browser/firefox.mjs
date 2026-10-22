@@ -30,6 +30,10 @@ fs.writeFileSync(PROFILE + "/user.js", Object.entries(prefs).map(([k, v]) => "us
 const started = Date.now() / 1000;
 const firefoxArgs = ["-no-remote", "-profile", path.resolve(PROFILE), "--start-debugger-server", String(PORT), "http://127.0.0.1:8770/wait.html"];
 let firefox;
+// Firefox on macOS reads native hosts from one shared folder. The test's
+// manifest replaces the installed app's until the test ends.
+const SHARED_HOST = path.join(os.homedir(), "Library/Application Support/Mozilla/NativeMessagingHosts/org.opendm.host.json");
+const sharedHostBefore = !WINDOWS && fs.existsSync(SHARED_HOST) ? fs.readFileSync(SHARED_HOST) : null;
 if (WINDOWS) {
   // Firefox on Windows finds native hosts in the registry only; the app
   // writes the same key at every launch.
@@ -44,6 +48,12 @@ if (WINDOWS) {
   // starts outlives taskkill, keeping the debugger port for the next run.
   firefox = spawn(FIREFOX, ["-wait-for-browser", ...firefoxArgs], { env: { ...process.env, OPENDM_DATA_DIR: DATA }, stdio: "ignore" });
 } else {
+  fs.mkdirSync(path.dirname(SHARED_HOST), { recursive: true });
+  fs.writeFileSync(SHARED_HOST, JSON.stringify({
+    name: "org.opendm.host", description: "OpenDM", type: "stdio",
+    path: path.join(REPO, "build/OpenDM.app/Contents/MacOS/opendm-host"),
+    allowed_extensions: ["connect@opendm.org"],
+  }));
   execFileSync("/usr/bin/open", ["-n", "-a", "/Applications/Firefox.app", "--env", "OPENDM_DATA_DIR=" + DATA, "--args", ...firefoxArgs]);
 }
 
@@ -142,6 +152,7 @@ try {
 } finally {
   client?.close();
   fs.rmSync(ROOT + "/site/go.json", { force: true });
+  if (!WINDOWS) sharedHostBefore ? fs.writeFileSync(SHARED_HOST, sharedHostBefore) : fs.rmSync(SHARED_HOST, { force: true });
   try {
     if (WINDOWS) execFileSync("taskkill", ["/F", "/T", "/PID", String(firefox.pid)], { stdio: "ignore" });
     else execFileSync("/usr/bin/pkill", ["-f", PROFILE]);

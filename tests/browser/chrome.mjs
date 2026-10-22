@@ -202,7 +202,7 @@ try {
   // 2b. A private window's download is captured too, with that window's cookies.
   // Alt-click left the next download of the same link to the browser for 5 s.
   await sleep(5000);
-  const privateWindow = await sw.evaluate("chrome.windows.create({ incognito: true, url: '" + SITE + "/index.html?private' }).then((w) => w.id)");
+  const privateWindow = await sw.evaluate("chrome.windows.create({ incognito: true, focused: false, url: '" + SITE + "/index.html?private' }).then((w) => w.id)");
   const privateTarget = await until("the private page", 5000, async () => (await targets()).find((t) => t.type === "page" && t.url.endsWith("?private")));
   const privatePage = await Cdp.open(privateTarget.webSocketDebuggerUrl);
   await until("the private page to load", 5000, () => privatePage.evaluate("document.readyState === 'complete'"));
@@ -215,6 +215,7 @@ try {
   check("the private window drops its copy", Boolean(await until("the private copy to go", 5000, async () => (await privateLeft()).length === 0)), JSON.stringify(await privateLeft()));
   privatePage.ws.close();
   await sw.evaluate("chrome.windows.remove(" + privateWindow + ")");
+  await page.send("Page.bringToFront");
 
   // 3. The page's script finds the master playlist inside a JSON answer and
   //    loads it plus one quality, as a player does.
