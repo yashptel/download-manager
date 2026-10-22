@@ -26,6 +26,9 @@ const BACKGROUND_INTERVAL: Duration = Duration::from_secs(2);
 /// repeats. The engine has already retried each connection a few times, so
 /// these are for what passes in minutes: a dropped network, or a server
 /// that blocks this address for a while.
+/// How long a server that limits connections gets to free the refused ones
+/// before the download goes on with fewer.
+const LIMIT_SETTLE: Duration = Duration::from_secs(2);
 const RETRY_WAITS: [Duration; 5] = [
     Duration::from_secs(30),
     Duration::from_secs(60),
@@ -1437,26 +1440,33 @@ async fn with_fewer_connections(shared: &Shared, task: &Task) -> bool {
     options.insert("split".into(), json!(fewer));
     options.insert("max-connection-per-server".into(), json!(fewer));
     let progress = saved_progress(shared, &task.row.id);
-    // Queued before it starts again: the fewer connections can be refused
-    // within a tick, and that refusal must count as a new one.
     let set_status = |status: TaskStatus, error: Option<String>| {
         let mut table = shared.tasks.lock().unwrap();
-        let row = table.tasks.get_mut(&task.row.id).map(|task| {
+        table.tasks.get_mut(&task.row.id).map(|task| {
             task.row.status = status;
             task.row.error = error;
             task.row.clone()
-        });
-        table.mark_dirty(task.row.id.clone());
-        row
+        })
     };
+    // Queued before it starts again: the fewer connections can be refused
+    // within a tick, and that refusal must count as a new one.
     let queued = set_status(TaskStatus::Queued, None);
+    if let Some(row) = &queued {
+        shared.listener.rows_changed(vec![row.clone()]);
+    }
+    // The server frees the slots of the connections just refused or dropped
+    // only once it notices they closed; starting again at once finds it full.
+    tokio::time::sleep(LIMIT_SETTLE).await;
+    let waiting = |task: &Task| task.row.status == TaskStatus::Queued;
+    if select(shared, std::slice::from_ref(&task.row.id), waiting).is_empty() {
+        return true; // Paused, started or removed meanwhile.
+    }
     if restart(shared, &rpc, task, &task.row.url, options, progress).await.is_err() {
         set_status(TaskStatus::Failed, task.row.error.clone());
         return false;
     }
-    if let Some(row) = queued {
-        shared.listener.rows_changed(vec![row]);
-    }
+    // Read at the next tick even if the engine stops it before then.
+    shared.tasks.lock().unwrap().mark_dirty(task.row.id.clone());
     shared.wake.notify_one();
     finish_action(shared, &rpc, std::slice::from_ref(task)).await;
     true
