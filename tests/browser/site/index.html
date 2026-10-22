@@ -31,6 +31,13 @@
     const auto = new URLSearchParams(location.search).get("auto");
     const link = document.getElementById("zip");
     if (auto === "zip") setTimeout(() => link.click(), 800);
+    // What pixeldrain's Download button does: a detached link, clicked in script.
+    if (auto === "limited") setTimeout(() => {
+      const a = document.createElement("a");
+      a.href = "/files/limited.bin?download";
+      a.download = "limited.mp4";
+      a.dispatchEvent(new MouseEvent("click"));
+    }, 800);
     if (auto === "alt") setTimeout(() => {
       // What an Alt-click looks like to the content script, then the click.
       link.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, altKey: true }));

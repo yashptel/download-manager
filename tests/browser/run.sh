@@ -11,6 +11,7 @@ site="$OPENDM_E2E_DIR/site"
 mkdir -p "$site/files" "$site/hls/360" "$site/hls/720" "$site/api"
 cp "$here"/site/*.html "$site/"
 [ -f "$site/files/report.zip" ] || head -c 6291456 /dev/urandom > "$site/files/report.zip"
+[ -f "$site/files/limited.bin" ] || head -c 16777216 /dev/urandom > "$site/files/limited.bin"
 [ -f "$site/files/clip.webm" ] || ffmpeg -loglevel error -y -f lavfi -i testsrc=size=320x180:rate=25 -t 4 \
     -c:v libvpx -b:v 300k "$site/files/clip.webm"
 # A two-quality HLS stream, the way video sites serve one.

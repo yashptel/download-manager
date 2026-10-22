@@ -177,6 +177,16 @@ try {
   check("browser dropped its copy", Boolean(dropped), (await leftover()).join(" ") + " lastError=" + (await sw.evaluate("lastError")));
   check("no file in the browser's folder", listFiles(BROWSER_DL).length === 0, listFiles(BROWSER_DL).join(", "));
 
+  // 1b. A server that refuses connections past its limit (pixeldrain) still gets the whole file.
+  const limitedSource = fs.readFileSync(ROOT + "/site/files/limited.bin");
+  await page.send("Page.navigate", { url: SITE + "/index.html?auto=limited" });
+  const limited = await until("the whole limited file", 60000, async () => {
+    const name = listFiles(APP_DL).find((f) => f.endsWith("limited.mp4"));
+    return name && fs.readFileSync(APP_DL + "/" + name).equals(limitedSource) && name;
+  });
+  const refusals = serverRequests("/files/limited.bin?download").length;
+  check("a connection-limited download completes", Boolean(limited), (limited || "incomplete") + " after " + refusals + " requests");
+
   // 2. Alt-click keeps the download in the browser.
   await page.send("Page.navigate", { url: SITE + "/index.html?auto=alt" });
   const kept = await until("the browser's download", 20000, async () => {
