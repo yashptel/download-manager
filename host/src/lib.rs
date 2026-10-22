@@ -10,10 +10,11 @@ pub const HOST_NAME: &str = "org.opendm.host";
 
 /// Chromium extension IDs allowed to start the host: the development ID
 /// fixed by the public key in `extension/manifest.json`, then the Chrome Web
-/// Store's.
+/// Store's and Edge Add-ons'.
 pub const CHROMIUM_EXTENSION_IDS: &[&str] = &[
     "nkhhoiejpomapjkeomdbflaicnnjclfj",
     "mjebgoilgooegcpfbmjnapamjpcnhcbg",
+    "kdehjojoelodooodmmpaaalkaoolkfal",
 ];
 
 /// The Firefox add-on ID from `browser_specific_settings` in the manifest.
