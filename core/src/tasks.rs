@@ -819,15 +819,17 @@ pub async fn first_answer(shared: &Shared, id: &str, limit: Duration) -> Result<
                 vec![json!(id), json!(["status", "totalLength", "completedLength", "errorMessage"])],
             )
             .await?;
+        // A server that limits connections refuses the extra ones (403)
+        // after answering the first with the file; that download is not refused.
         let data = number(&status, "totalLength").unwrap_or(0) > 0
             || number(&status, "completedLength").unwrap_or(0) > 0;
         match status["status"].as_str() {
+            _ if data => return Ok(()),
             Some("error") => {
                 let message = status["errorMessage"].as_str().unwrap_or("The download failed");
                 return Err(friendly_error(message));
             }
             Some("complete" | "removed") => return Ok(()),
-            _ if data => return Ok(()),
             _ => tokio::time::sleep(Duration::from_millis(100)).await,
         }
     }
@@ -1395,6 +1397,9 @@ async fn after_refusal(shared: Arc<Shared>, id: String, status: u16) {
     else {
         return;
     };
+    if status == 403 && with_fewer_connections(&shared, &task).await {
+        return;
+    }
     let first = {
         let mut table = shared.tasks.lock().unwrap();
         table.tasks.get_mut(&id).is_some_and(|task| !std::mem::replace(&mut task.cookies_refreshed, true))
@@ -1405,6 +1410,56 @@ async fn after_refusal(shared: Arc<Shared>, id: String, status: u16) {
     if status == 401 {
         shared.listener.login_needed(id, task.row.url);
     }
+}
+
+/// A server that limits connections (pixeldrain allows five) answers the
+/// extra ones with 403 once the download is under way. The address and
+/// cookies are fine, since the server answered with the file, so the
+/// download goes on from where it is with half as many connections, as IDM
+/// does. True when it restarted.
+async fn with_fewer_connections(shared: &Shared, task: &Task) -> bool {
+    if task.row.total_bytes == 0 && task.row.done_bytes == 0 {
+        return false;
+    }
+    let Some(rpc) = shared.current_rpc() else {
+        return false;
+    };
+    let Ok(old) = rpc.call("aria2.getOption", vec![json!(task.row.id)]).await else {
+        return false;
+    };
+    let option = |key: &str| old[key].as_str().and_then(|value| value.parse::<u32>().ok()).unwrap_or(1);
+    let used = option("split").min(option("max-connection-per-server"));
+    if used <= 1 {
+        return false;
+    }
+    let fewer = (used / 2).to_string();
+    let mut options = readd_options(&rpc, task).await;
+    options.insert("split".into(), json!(fewer));
+    options.insert("max-connection-per-server".into(), json!(fewer));
+    let progress = saved_progress(shared, &task.row.id);
+    // Queued before it starts again: the fewer connections can be refused
+    // within a tick, and that refusal must count as a new one.
+    let set_status = |status: TaskStatus, error: Option<String>| {
+        let mut table = shared.tasks.lock().unwrap();
+        let row = table.tasks.get_mut(&task.row.id).map(|task| {
+            task.row.status = status;
+            task.row.error = error;
+            task.row.clone()
+        });
+        table.mark_dirty(task.row.id.clone());
+        row
+    };
+    let queued = set_status(TaskStatus::Queued, None);
+    if restart(shared, &rpc, task, &task.row.url, options, progress).await.is_err() {
+        set_status(TaskStatus::Failed, task.row.error.clone());
+        return false;
+    }
+    if let Some(row) = queued {
+        shared.listener.rows_changed(vec![row]);
+    }
+    shared.wake.notify_one();
+    finish_action(shared, &rpc, std::slice::from_ref(task)).await;
+    true
 }
 
 /// Asks the browser which cookies it would send now and, when they differ
