@@ -323,7 +323,7 @@ function isExcluded(url) {
 function shouldCapture(item) {
   const rules = settings.rules;
   if (!settings.captureOn || !rules.capture || item.state !== "in_progress") return false;
-  if (item.incognito || item.byExtensionId) return false;
+  if (item.byExtensionId) return false;
   const url = item.finalUrl || item.url;
   if (!/^(https?|ftp):/i.test(url)) return false; // blob:, data:, file:
   if (Date.now() < bypass.until && (!bypass.url || bypass.url === item.url || bypass.url === url)) return false;
@@ -356,7 +356,7 @@ async function takeOver(item) {
 async function offer(item) {
   try {
     const request = requests.get(item.url) ?? requests.get(item.finalUrl);
-    const base = await requestItem(item.url, { referrer: item.referrer, headers: request?.headers });
+    const base = await requestItem(item.url, { referrer: item.referrer, headers: request?.headers, storeId: await storeOf(item) });
     const name = basename(item.filename);
     return await handOver("download", [
       {
@@ -371,6 +371,15 @@ async function offer(item) {
     noteError(error);
     return false;
   }
+}
+
+/** The cookie store of a download's window. Firefox names it on the item;
+ * Chromium keeps one store for all Incognito windows. */
+async function storeOf(item) {
+  if (item.cookieStoreId || !item.incognito) return item.cookieStoreId;
+  const [stores, tabs] = await Promise.all([api.cookies.getAllCookieStores(), api.tabs.query({})]);
+  const privateTabs = new Set(tabs.filter((tab) => tab.incognito).map((tab) => tab.id));
+  return stores.find((store) => store.tabIds.some((id) => privateTabs.has(id)))?.id;
 }
 
 // Types a browser shows in the page when they come without "attachment".
@@ -404,6 +413,7 @@ function responseDownload(details) {
     totalBytes: responseSize(details),
     referrer: header(requests.get(details.url)?.headers, "referer") || details.originUrl || "",
     incognito: details.incognito,
+    cookieStoreId: details.cookieStoreId,
   };
 }
 
