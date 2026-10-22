@@ -203,7 +203,8 @@ mod tests {
             chromium["allowed_origins"],
             serde_json::json!([
                 "chrome-extension://nkhhoiejpomapjkeomdbflaicnnjclfj/",
-                "chrome-extension://mjebgoilgooegcpfbmjnapamjpcnhcbg/"
+                "chrome-extension://mjebgoilgooegcpfbmjnapamjpcnhcbg/",
+                "chrome-extension://kdehjojoelodooodmmpaaalkaoolkfal/"
             ])
         );
         let firefox: serde_json::Value = serde_json::from_str(&manifest(host, true)).unwrap();
