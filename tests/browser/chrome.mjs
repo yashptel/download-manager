@@ -150,7 +150,9 @@ function loadExtension() {
         if (message.id === 1) message.error ? reject(new Error(message.error.message)) : resolve(message.result.id);
       }
     });
-    chrome.stdio[3].write(JSON.stringify({ id: 1, method: "Extensions.loadUnpacked", params: { path: path.join(REPO, "extension") } }) + "\0");
+    // Allowed in Incognito, as a user can allow it in chrome://extensions.
+    const params = { path: path.join(REPO, "extension"), enableInIncognito: true };
+    chrome.stdio[3].write(JSON.stringify({ id: 1, method: "Extensions.loadUnpacked", params }) + "\0");
   });
 }
 
@@ -196,6 +198,21 @@ try {
   check("Alt-click download stays in the browser", Boolean(kept), kept ?? (await leftover()).join(" "));
   const zips = listFiles(APP_DL).filter((f) => f.includes("Quarterly Report"));
   check("OpenDM did not get the Alt-click download", zips.length === 1, zips.join(", "));
+
+  // 2b. A private window's download is captured too, with that window's cookies.
+  const browser = await Cdp.open((await (await fetch("http://127.0.0.1:" + PORT + "/json/version")).json()).webSocketDebuggerUrl);
+  const { browserContextId } = await browser.send("Target.createBrowserContext");
+  const { targetId } = await browser.send("Target.createTarget", { url: SITE + "/index.html", browserContextId });
+  const privateTarget = await until("the private page", 5000, async () => (await targets()).find((t) => t.id === targetId));
+  const privatePage = await Cdp.open(privateTarget.webSocketDebuggerUrl);
+  await until("the private page to load", 5000, () => privatePage.evaluate("document.readyState === 'complete'"));
+  await privatePage.evaluate("document.cookie = 'private=yes; path=/'; document.getElementById('zip').click(); true");
+  const privateZip = await until("the private download", 30000, async () => listFiles(APP_DL).filter((f) => f.includes("Quarterly Report")).length === 2);
+  check("a private window's download is captured", Boolean(privateZip), listFiles(APP_DL).join(", ") + " lastError=" + (await sw.evaluate("lastError")));
+  const privateCookie = engineRequests("/files/report.zip").at(-1)?.headers.Cookie;
+  check("it carries the private window's cookies", Boolean(privateZip) && Boolean(privateCookie?.includes("private=yes")), privateCookie);
+  await browser.send("Target.disposeBrowserContext", { browserContextId });
+  browser.ws.close();
 
   // 3. The page's script finds the master playlist inside a JSON answer and
   //    loads it plus one quality, as a player does.
