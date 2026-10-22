@@ -97,10 +97,16 @@ let client;
 try {
   client = await rdp();
   const root = await client.ask({ to: "root", type: "getRoot" });
-  const installed = await client.ask({ to: root.addonsActor, type: "installTemporaryAddon", addonPath: path.join(REPO, "extension") });
+  // The Firefox package: it asks for permissions the shared manifest leaves out.
+  const version = JSON.parse(fs.readFileSync(path.join(REPO, "extension/manifest.json"), "utf8")).version;
+  execFileSync("python3", [path.join(REPO, "scripts/package-extension.py")], { stdio: "ignore" });
+  const addon = path.resolve(RUN, "addon");
+  fs.mkdirSync(addon);
+  execFileSync("unzip", ["-q", path.join(REPO, "build/extension/opendm-connect-" + version + "-firefox.zip"), "-d", addon]);
+  const installed = await client.ask({ to: root.addonsActor, type: "installTemporaryAddon", addonPath: addon });
   check("Firefox installs the add-on", installed.addon?.id === "connect@opendm.org", installed.addon?.id ?? JSON.stringify(installed));
   await new Promise((r) => setTimeout(r, 1500));
-  fs.writeFileSync(ROOT + "/site/go.json", JSON.stringify({ url: "http://127.0.0.1:8770/index.html?auto=zip&firefox=1" }));
+  fs.writeFileSync(ROOT + "/site/go.json", JSON.stringify({ url: "http://127.0.0.1:8770/index.html?auto=zip,limited&firefox=1" }));
 
   let saved;
   for (let i = 0; i < 200 && !saved; i++) {
@@ -116,6 +122,18 @@ try {
   check("the engine sent the cookie", Boolean(engine?.headers.Cookie?.includes("session=abc123")), engine?.headers.Cookie);
   check("the engine sent the referer", Boolean(engine?.headers.Referer?.includes("auto=zip")), engine?.headers.Referer);
   check("Firefox kept no copy", files(BROWSER_DL).length === 0, files(BROWSER_DL).join(", "));
+  const limitedSource = fs.readFileSync(ROOT + "/site/files/limited.bin");
+  let limited;
+  for (let i = 0; i < 300 && !limited; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    const name = files(APP_DL).find((f) => f.endsWith("limited.mp4"));
+    if (name && fs.readFileSync(APP_DL + "/" + name).equals(limitedSource)) limited = name;
+  }
+  check("a script-clicked download from a connection-limited server completes", Boolean(limited), limited);
+  check("Firefox kept no copy of it", files(BROWSER_DL).length === 0, files(BROWSER_DL).join(", "));
+  const { tabs } = await client.ask({ to: "root", type: "listTabs" });
+  const shown = tabs?.map((tab) => tab.url).join(", ") ?? "";
+  check("the page stays where it was", /index\.html\?auto=zip,limited/.test(shown), shown);
   const pageScript = fs.readFileSync(ROOT + "/requests.log", "utf8").trim().split("\n").map(JSON.parse)
     .filter((r) => r.at > started && r.path.startsWith("/log?page-script=")).at(-1);
   check("the page script runs in the page", pageScript?.path === "/log?page-script=true", pageScript?.path);

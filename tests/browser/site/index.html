@@ -28,16 +28,18 @@
       .then(() => fetch("/hls/720/stream.m3u8"));
     // Tells the test whether OpenDM's page script wrapped fetch in this browser.
     fetch("/log?page-script=" + !/\[native code\]/.test(Function.prototype.toString.call(window.fetch)));
-    const auto = new URLSearchParams(location.search).get("auto");
+    // One or more of zip, limited and alt, run in that order.
+    const autos = (new URLSearchParams(location.search).get("auto") || "").split(",");
+    const auto = autos[0];
     const link = document.getElementById("zip");
-    if (auto === "zip") setTimeout(() => link.click(), 800);
+    if (autos.includes("zip")) setTimeout(() => link.click(), 800);
     // What pixeldrain's Download button does: a detached link, clicked in script.
-    if (auto === "limited") setTimeout(() => {
+    if (autos.includes("limited")) setTimeout(() => {
       const a = document.createElement("a");
       a.href = "/files/limited.bin?download";
       a.download = "limited.mp4";
       a.dispatchEvent(new MouseEvent("click"));
-    }, 800);
+    }, auto === "limited" ? 800 : 3000);
     if (auto === "alt") setTimeout(() => {
       // What an Alt-click looks like to the content script, then the click.
       link.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, altKey: true }));

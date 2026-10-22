@@ -39,6 +39,10 @@ def package(target, blocked=None, firefox=False):
     # Each family reads its own background entry; Edge refuses a package
     # that carries Firefox's as well.
     own["background"].pop("service_worker" if firefox else "scripts", None)
+    # Firefox still lets an MV3 add-on hold a response while the app decides;
+    # Chromium refuses the permission.
+    if firefox:
+        own["permissions"].append("webRequestBlocking")
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", json.dumps(own, indent=2) + "\n")
         for path in files:

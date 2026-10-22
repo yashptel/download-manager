@@ -342,12 +342,23 @@ function shouldCapture(item) {
 /** Pauses the browser's download, offers it to the app, and cancels or resumes it. */
 async function takeOver(item) {
   await api.downloads.pause(item.id).catch(() => {});
-  let taken = false;
+  const taken = await offer(item);
+  if (taken) {
+    await api.downloads.cancel(item.id).catch(noteError);
+    await api.downloads.erase({ id: item.id }).catch(noteError);
+  } else {
+    await api.downloads.resume(item.id).catch(() => {});
+  }
+  return taken;
+}
+
+/** Offers a download to the app; true when it took it. */
+async function offer(item) {
   try {
     const request = requests.get(item.url) ?? requests.get(item.finalUrl);
     const base = await requestItem(item.url, { referrer: item.referrer, headers: request?.headers });
     const name = basename(item.filename);
-    taken = await handOver("download", [
+    return await handOver("download", [
       {
         ...base,
         filename: name || undefined,
@@ -358,14 +369,42 @@ async function takeOver(item) {
     ]);
   } catch (error) {
     noteError(error);
+    return false;
   }
-  if (taken) {
-    await api.downloads.cancel(item.id).catch(noteError);
-    await api.downloads.erase({ id: item.id }).catch(noteError);
-  } else {
-    await api.downloads.resume(item.id).catch(() => {});
+}
+
+// Types a browser shows in the page when they come without "attachment".
+const INLINE = /^(text|image|video|audio)\/|^application\/(pdf|json|xml|xhtml\+xml|javascript|ecmascript)$|[+](xml|json)$/;
+
+/** The name in a Content-Disposition header, or "". */
+function dispositionName(value) {
+  const encoded = /filename\*\s*=\s*[^']*'[^']*'([^;]+)/i.exec(value);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1].trim());
+    } catch {}
   }
-  return taken;
+  const plain = /filename\s*=\s*(?:"([^"]*)"|([^;]+))/i.exec(value);
+  return plain ? (plain[1] ?? plain[2]).trim() : "";
+}
+
+/** A response the browser will save rather than show, as a download item
+ * for shouldCapture, or null. */
+function responseDownload(details) {
+  if (details.method !== "GET" || ![200, 206].includes(details.statusCode)) return null;
+  const disposition = header(details.responseHeaders, "content-disposition");
+  const mime = header(details.responseHeaders, "content-type").split(";")[0].trim().toLowerCase();
+  if (!/^\s*attachment/i.test(disposition) && (!mime || INLINE.test(mime))) return null;
+  return {
+    state: "in_progress",
+    url: details.url,
+    finalUrl: details.url,
+    filename: dispositionName(disposition),
+    mime,
+    totalBytes: responseSize(details),
+    referrer: header(requests.get(details.url)?.headers, "referer") || details.originUrl || "",
+    incognito: details.incognito,
+  };
 }
 
 if (api.downloads.onDeterminingFilename) {
@@ -393,6 +432,30 @@ if (api.downloads.onDeterminingFilename) {
   api.downloads.onCreated.addListener((item) => {
     ready.then(() => shouldCapture(item) && takeOver(item));
   });
+  // A download Firefox asks where to save exists only after its Save dialog,
+  // too late to take over. So, as IDM's Firefox add-on does, the response is
+  // caught before Firefox decides what to do with it. Needs webRequestBlocking,
+  // which only the Firefox package asks for.
+  try {
+    api.webRequest.onHeadersReceived.addListener(
+      (details) => {
+        const item = responseDownload(details);
+        if (!item) return {};
+        return ready.then(async () => {
+          if (!shouldCapture(item)) return {};
+          if (await offer(item)) return { cancel: true };
+          // Declined: Firefox keeps it, and onCreated must not offer it again.
+          bypass.until = Date.now() + 5_000;
+          bypass.url = item.url;
+          return {};
+        });
+      },
+      { urls: ["<all_urls>"], types: ["main_frame", "sub_frame"] },
+      ["blocking", "responseHeaders"],
+    );
+  } catch (error) {
+    noteError(error);
+  }
 }
 
 // ─── Context menu ────────────────────────────────────────────────────────
