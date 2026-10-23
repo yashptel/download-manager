@@ -12,8 +12,9 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
         self.store = store
         super.init()
         if let button = item.button {
-            let image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: "OpenDM")
+            let image = NSImage(named: "MenuBar")
             image?.isTemplate = true
+            image?.accessibilityDescription = "OpenDM"
             button.image = image
             button.imagePosition = .imageLeading
             button.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)

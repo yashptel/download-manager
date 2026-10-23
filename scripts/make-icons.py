@@ -119,6 +119,16 @@ def tray_icon(size, color):
     return image
 
 
+def menu_bar_icon(scale):
+    """The arrow for the macOS menu bar, 14 points on an 18-point canvas, in
+    black: macOS tints a template image to match the menu bar."""
+    side, mark = 18 * scale, 14 * scale
+    image = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    inset = (side - mark) // 2
+    blocks(ImageDraw.Draw(image), inset, inset, mark, {"#": ("#000000", 1), "o": ("#000000", 0.4), "+": ("#000000", 0.4)}, snap=True)
+    return image
+
+
 def mac_icon(size):
     """Apple's grid: an 824-point tile on a 1024 canvas, with a soft shadow."""
     return tile(size, inset=round(size * 100 / 1024), shadow=True)
@@ -160,6 +170,8 @@ def main():
 
     mac = [mac_icon(n) for n in (16, 32, 64, 128, 256, 512, 1024)]
     mac[-1].save(ROOT / "apple" / "AppIcon.icns", append_images=mac[:-1])
+    menu_bar_icon(1).save(ROOT / "apple" / "MenuBar.png")
+    menu_bar_icon(2).save(ROOT / "apple" / "MenuBar@2x.png")
 
     # Chrome asks for 96 px of art with 16 px of padding in the 128 px icon.
     extension = ROOT / "extension" / "icons"

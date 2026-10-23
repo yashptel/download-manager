@@ -1,4 +1,7 @@
-# <img src="docs/icon.svg" width="40" height="40" align="top" alt=""> OpenDM
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="store/github/banner-dark.png">
+  <img src="store/github/banner.png" alt="OpenDM">
+</picture>
 
 An open-source download manager for macOS and Windows: IDM's browser-capture
 workflow and dialogs, with native UIs on each platform. OpenDM is a working name.
