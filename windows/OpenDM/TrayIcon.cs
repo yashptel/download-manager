@@ -11,8 +11,9 @@ namespace OpenDM;
 /// <summary>
 /// Notification-area icon: total speed in the tooltip, and quick controls.
 /// Like the system's own tray icons it is a single color that follows the
-/// taskbar's light or dark mode. The native popup menu runs each item's
-/// Command, so items use commands rather than Click handlers.
+/// taskbar's light or dark mode. While downloading, its chunks scroll down
+/// through the arrow. The native popup menu runs each item's Command, so
+/// items use commands rather than Click handlers.
 /// </summary>
 internal sealed partial class TrayIcon : IDisposable
 {
@@ -21,7 +22,13 @@ internal sealed partial class TrayIcon : IDisposable
     private readonly MenuFlyoutItem statusItem = new() { IsEnabled = false };
     private readonly MenuFlyoutItem resumeAllItem;
     private readonly MenuFlyoutItem pauseAllItem;
+    private readonly BitmapImage lightImage = Asset("Tray-light.ico");
+    private readonly BitmapImage darkImage = Asset("Tray-dark.ico");
+    private readonly BitmapImage[] lightFrames = Enumerable.Range(0, 7).Select(k => Asset($"Tray-light-downloading-{k}.ico")).ToArray();
+    private readonly BitmapImage[] darkFrames = Enumerable.Range(0, 7).Select(k => Asset($"Tray-dark-downloading-{k}.ico")).ToArray();
+    private readonly DispatcherQueueTimer animation = DispatcherQueue.GetForCurrentThread().CreateTimer();
     private bool? lightTaskbar;
+    private int frame;
 
     public TrayIcon(DownloadStore store, DownloadCore core, Action showWindow, Action newDownload, Action quit)
     {
@@ -46,6 +53,13 @@ internal sealed partial class TrayIcon : IDisposable
             LeftClickCommand = show,
             NoLeftClickDelay = true,
         };
+        animation.Interval = TimeSpan.FromMilliseconds(160);
+        animation.IsRepeating = true;
+        animation.Tick += (_, _) =>
+        {
+            frame = (frame + 1) % lightFrames.Length;
+            ShowIcon();
+        };
         FollowTaskbarTheme();
         // Efficiency mode would throttle the process, and with it the downloads.
         icon.ForceCreate(enablesEfficiencyMode: false);
@@ -58,7 +72,11 @@ internal sealed partial class TrayIcon : IDisposable
         Update(store);
     }
 
-    public void Dispose() => icon.Dispose();
+    public void Dispose()
+    {
+        animation.Stop();
+        icon.Dispose();
+    }
 
     private void Update(DownloadStore store)
     {
@@ -67,6 +85,17 @@ internal sealed partial class TrayIcon : IDisposable
             ? $"OpenDM \u2014 {stats.Active} downloading, {Format.Speed(stats.DownloadSpeed)}"
             : "OpenDM";
         if (icon.ToolTipText != text) icon.ToolTipText = text;
+        var animate = stats.Active > 0 && settings.AnimationsEnabled;
+        if (animate && !animation.IsRunning)
+        {
+            animation.Start();
+        }
+        else if (!animate && animation.IsRunning)
+        {
+            animation.Stop();
+            frame = 0;
+            ShowIcon();
+        }
         var idle = Format.Idle(store.Items);
         statusItem.Text = (stats.Active, idle.Length) switch
         {
@@ -86,9 +115,20 @@ internal sealed partial class TrayIcon : IDisposable
         var light = key?.GetValue("SystemUsesLightTheme") is int value && value != 0;
         if (light == lightTaskbar) return;
         lightTaskbar = light;
-        var file = light ? "Tray-light.ico" : "Tray-dark.ico";
-        icon.IconSource = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", file)));
+        ShowIcon();
     }
+
+    private void ShowIcon()
+    {
+        var light = lightTaskbar == true;
+        var image = animation.IsRunning
+            ? (light ? lightFrames : darkFrames)[frame]
+            : light ? lightImage : darkImage;
+        if (icon.IconSource != image) icon.IconSource = image;
+    }
+
+    private static BitmapImage Asset(string file) =>
+        new(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", file)));
 
     private static XamlUICommand Command(Action action)
     {
