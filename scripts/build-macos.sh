@@ -81,7 +81,7 @@ cp "$work/aria2-next" "$app/Contents/MacOS/aria2-next"
 cp "$work/opendm-host" "$app/Contents/MacOS/opendm-host"
 cp LICENSE "$app/Contents/Resources/LICENSE"
 cp apple/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
-cp apple/MenuBar.png apple/MenuBar@2x.png "$app/Contents/Resources/"
+cp apple/MenuBar*.png "$app/Contents/Resources/"
 cp vendor/aria2-next/bin/COPYING "$app/Contents/Resources/aria2-next-COPYING"
 sed "s/@VERSION@/$version/g" apple/Info.plist > "$app/Contents/Info.plist"
 
