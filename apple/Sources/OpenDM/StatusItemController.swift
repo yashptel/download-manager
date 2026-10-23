@@ -8,10 +8,14 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
     private let store: DownloadStore
     private let speedItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let image = StatusItemController.templateImage(named: "MenuBar")
-    /// While downloading, the icon's chunks scroll down through the arrow.
-    private let downloadingFrames = (0..<7).map { StatusItemController.templateImage(named: "MenuBar-Downloading-\($0)") }
-    private var animation: Timer?
-    private var frame = 0
+    private let progressFrames = (0..<26).map { StatusItemController.templateImage(named: "MenuBar-Progress-\($0)") }
+    private enum DisplayFrame: Equatable {
+        case idle
+        case progress(Int)
+    }
+    private var displayedFrame: DisplayFrame?
+    private var glyphState = GlyphState.idle
+    private var completionTimer: Timer?
 
     init(store: DownloadStore) {
         self.store = store
@@ -40,11 +44,7 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
     func storeStatusDidChange(_ store: DownloadStore) {
         let stats = store.stats
         item.button?.title = stats.active > 0 ? Format.speed(stats.downloadSpeed) : ""
-        if stats.active > 0 && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            startAnimation()
-        } else {
-            stopAnimation()
-        }
+        updateGlyph()
         let idle = Format.idle(store.rows)
         speedItem.title = switch (stats.active, idle.isEmpty) {
         case (0, true): "No active downloads"
@@ -54,27 +54,68 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
         }
     }
 
-    private func startAnimation() {
-        guard animation == nil else { return }
-        let timer = Timer(timeInterval: 0.16, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.advanceFrame() }
+    func store(_ store: DownloadStore, didChange changes: [RowChange]) {
+        let completed = changes.contains { $0.old?.status == .downloading && $0.new.status == .complete }
+        updateGlyph(completed: completed)
+    }
+
+    func store(_ store: DownloadStore, didRemove ids: Set<String>) {
+        updateGlyph()
+    }
+
+    private func updateGlyph(completed: Bool = false) {
+        let next = GlyphState.from(store.rows)
+        if completionTimer != nil {
+            if next.isDownloading {
+                completionTimer?.invalidate()
+                completionTimer = nil
+            } else {
+                return
+            }
         }
-        // The common modes keep it running while the menu is open.
+        if completed && glyphState.isDownloading && !next.isDownloading {
+            glyphState = .completed
+            show(.completed)
+            holdCompletion()
+            return
+        }
+        glyphState = next
+        show(next)
+    }
+
+    private func holdCompletion() {
+        let timer = Timer(timeInterval: 1, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.completionTimer = nil
+                self.updateGlyph()
+            }
+        }
         RunLoop.main.add(timer, forMode: .common)
-        animation = timer
+        completionTimer = timer
     }
 
-    private func stopAnimation() {
-        guard let animation else { return }
-        animation.invalidate()
-        self.animation = nil
-        frame = 0
-        item.button?.image = image
+    private func show(_ state: GlyphState) {
+        let frame: DisplayFrame = state == .idle ? .idle : .progress(frameIndex(for: state))
+        guard frame != displayedFrame else { return }
+        displayedFrame = frame
+        switch frame {
+        case .idle:
+            item.button?.image = image
+            NSApp.dockTile.contentView = nil
+            NSApp.dockTile.display()
+        case .progress(let index):
+            item.button?.image = progressFrames[index]
+            showDock(index)
+        }
     }
 
-    private func advanceFrame() {
-        frame = (frame + 1) % downloadingFrames.count
-        item.button?.image = downloadingFrames[frame]
+    private func showDock(_ index: Int) {
+        guard let image = NSImage(named: "DockProgress-\(index)") else { return }
+        let view = NSImageView(image: image)
+        view.imageScaling = .scaleProportionallyUpOrDown
+        NSApp.dockTile.contentView = view
+        NSApp.dockTile.display()
     }
 
     private static func templateImage(named name: String) -> NSImage? {

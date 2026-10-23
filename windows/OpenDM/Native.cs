@@ -32,6 +32,14 @@ internal static class Shell
 internal static class Native
 {
     private static readonly Guid DownloadsFolderId = new("374DE290-123F-4565-9164-39C4925E467B");
+    private static readonly ITaskbarList3? Taskbar = CreateTaskbar();
+
+    internal enum TaskbarProgressState : uint
+    {
+        NoProgress = 0,
+        Normal = 2,
+        Paused = 8,
+    }
 
     /// <summary>The user's Downloads folder, including a relocated one.</summary>
     public static string DownloadsFolder()
@@ -101,6 +109,48 @@ internal static class Native
         };
         FlashWindowEx(ref info);
     }
+
+    public static void SetTaskbarProgress(IntPtr window, TaskbarProgressState state, double fraction = 0)
+    {
+        if (window == IntPtr.Zero || Taskbar is null) return;
+        if (Taskbar.SetProgressState(window, state) < 0) return;
+        if (state == TaskbarProgressState.Normal)
+        {
+            var completed = (ulong)Math.Round(Math.Clamp(fraction, 0, 1) * 1000);
+            Taskbar.SetProgressValue(window, completed, 1000);
+        }
+    }
+
+    private static ITaskbarList3? CreateTaskbar()
+    {
+        var classId = new Guid("56FDF344-FD6D-11D0-958A-006097C9A090");
+        var interfaceId = new Guid("EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF");
+        return CoCreateInstance(ref classId, IntPtr.Zero, 1, ref interfaceId, out ITaskbarList3 taskbar) >= 0
+            && taskbar.HrInit() >= 0 ? taskbar : null;
+    }
+
+    [ComImport]
+    [Guid("EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITaskbarList3
+    {
+        [PreserveSig] int HrInit();
+        [PreserveSig] int AddTab(IntPtr window);
+        [PreserveSig] int DeleteTab(IntPtr window);
+        [PreserveSig] int ActivateTab(IntPtr window);
+        [PreserveSig] int SetActiveAlt(IntPtr window);
+        [PreserveSig] int MarkFullscreenWindow(IntPtr window, [MarshalAs(UnmanagedType.Bool)] bool fullscreen);
+        [PreserveSig] int SetProgressValue(IntPtr window, ulong completed, ulong total);
+        [PreserveSig] int SetProgressState(IntPtr window, TaskbarProgressState state);
+    }
+
+    [DllImport("ole32.dll")]
+    private static extern int CoCreateInstance(
+        ref Guid classId,
+        IntPtr outer,
+        uint context,
+        ref Guid interfaceId,
+        out ITaskbarList3 taskbar);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FlashInfo
