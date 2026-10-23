@@ -13,7 +13,7 @@ $("video-button").addEventListener("change", (event) => {
 });
 
 const STATUS = {
-  connected: (state) => "Connected" + (state.version ? " · " + state.version : ""),
+  connected: (state) => "Connected · OpenDM " + state.version + " · Connect " + api.runtime.getManifest().version,
   "not-running": () => "OpenDM is not running",
   error: (state) => (/not found|not registered/i.test(state.error) ? "OpenDM is not installed" : state.error || "Cannot reach OpenDM"),
   idle: () => "Connecting…",
