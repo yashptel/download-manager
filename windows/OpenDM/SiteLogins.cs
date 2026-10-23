@@ -195,7 +195,7 @@ internal static class LoginPrompt
             }
             core.SetLogin(id, answer.User, answer.Password);
         });
-        ToolWindows.Show(window, activate: true);
+        ToolWindows.Show(window);
     }
 }
 

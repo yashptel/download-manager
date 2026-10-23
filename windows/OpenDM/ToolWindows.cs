@@ -48,25 +48,27 @@ internal static class ToolWindows
     }
 
     /// <summary>
-    /// Shows the window centered, or cascaded from the last one open. With
-    /// activate, it takes the focus when Windows allows; when the foreground
-    /// rules refuse (another app is in use), its taskbar button flashes.
+    /// Shows the window centered, or cascaded from the last one open, in front.
     /// </summary>
-    public static void Show(Window window, bool activate)
+    public static void Show(Window window)
     {
         Place(window);
         Open.Add(window);
-        if (!activate)
-        {
-            window.AppWindow.Show(activateWindow: false);
-            return;
-        }
+        Raise(window);
+    }
+
+    /// <summary>
+    /// Brings the window to the front with the focus. Windows gives the focus
+    /// only to the app in use; otherwise the window goes above the other
+    /// windows without it, and its taskbar button flashes.
+    /// </summary>
+    public static void Raise(Window window)
+    {
         window.Activate();
         var hwnd = WindowNative.GetWindowHandle(window);
-        if (!Native.SetForegroundWindow(hwnd) && Native.GetForegroundWindow() != hwnd)
-        {
-            Native.Flash(hwnd);
-        }
+        if (Native.SetForegroundWindow(hwnd) || Native.GetForegroundWindow() == hwnd) return;
+        Native.PutOnTop(hwnd);
+        Native.Flash(hwnd);
     }
 
     /// <summary>Enter runs <paramref name="enter"/> unless a button or list has the focus; Esc runs <paramref name="escape"/>.</summary>

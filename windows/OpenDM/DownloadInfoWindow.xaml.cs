@@ -32,9 +32,7 @@ internal static class NewDownloads
         Window window = downloads.Count == 1
             ? new DownloadInfoWindow(downloads[0], store, core)
             : new BatchDownloadWindow(downloads, store, core);
-        // Above the browser the download came from; when Windows will not
-        // give it the focus, its taskbar button flashes.
-        ToolWindows.Show(window, activate: true);
+        ToolWindows.Show(window);
     }
 
     /// <summary>Asks for a folder in a picker owned by <paramref name="owner"/>.</summary>

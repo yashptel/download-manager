@@ -42,7 +42,7 @@ internal static class AddressRefresh
     {
         window = opened;
         opened.Closed += (_, _) => { if (window == opened) window = null; };
-        ToolWindows.Show(opened, activate: true);
+        ToolWindows.Show(opened);
         return opened;
     }
 }

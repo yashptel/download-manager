@@ -42,12 +42,12 @@ public sealed partial class ProgressWindow : Window
         {
             if (Open.TryGetValue(id, out var existing))
             {
-                existing.AppWindow.MoveInZOrderAtTop();
+                ToolWindows.Raise(existing);
                 continue;
             }
             var window = new ProgressWindow(id, store, core);
             Open[id] = window;
-            ToolWindows.Show(window, activate: false);
+            ToolWindows.Show(window);
             OpenChanged?.Invoke();
         }
     }
@@ -118,6 +118,7 @@ public sealed partial class ProgressWindow : Window
         CloseButton.Visibility = complete ? Visibility.Visible : Visibility.Collapsed;
         if (complete)
         {
+            if (switched && AppWindow.IsVisible) ToolWindows.Raise(this);
             SizeText.Text = row.TotalBytes > 0 ? Format.Bytes(row.TotalBytes) : "\u2014";
             SavedToText.Text = row.Path ?? row.Dir;
             ToolTipService.SetToolTip(SavedToText, SavedToText.Text);

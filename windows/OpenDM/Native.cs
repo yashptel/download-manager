@@ -78,6 +78,18 @@ internal static class Native
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 
+    /// <summary>Moves the window above all other windows without the focus. Windows allows this to any app.</summary>
+    public static void PutOnTop(IntPtr window)
+    {
+        const uint flags = 0x1 | 0x2 | 0x10; // SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
+        SetWindowPos(window, new IntPtr(-1), 0, 0, 0, 0, flags); // HWND_TOPMOST
+        SetWindowPos(window, new IntPtr(-2), 0, 0, 0, 0, flags); // HWND_NOTOPMOST: stays in front, no longer pinned
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+
     /// <summary>Flashes the window's taskbar button until it comes to the front.</summary>
     public static void Flash(IntPtr window)
     {
