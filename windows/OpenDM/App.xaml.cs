@@ -1,6 +1,5 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using WinRT.Interop;
 
 namespace OpenDM;
 
@@ -45,9 +44,7 @@ public partial class App : Application
         store.LoginNeeded += (id, url) => LoginPrompt.Handle(id, url, store, core);
         store.NewAddressReceived += (id, download) => AddressRefresh.Received(id, download, store, core);
         window = new MainWindow(store, core);
-        tray = new TrayIcon(store, core,
-            () => window is null ? IntPtr.Zero : WindowNative.GetWindowHandle(window),
-            ShowMainWindow, () => window?.NewDownload(), Quit);
+        tray = new TrayIcon(store, core, window, ShowMainWindow, () => window?.NewDownload(), Quit);
         core.Start();
         InstallBrowserHost(core);
         // The browser extension starts OpenDM with --background when it is not running.

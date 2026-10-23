@@ -8,12 +8,9 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
     private let store: DownloadStore
     private let speedItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let image = StatusItemController.templateImage(named: "MenuBar")
-    private let progressFrames = (0..<26).map { StatusItemController.templateImage(named: "MenuBar-Progress-\($0)") }
-    private enum DisplayFrame: Equatable {
-        case idle
-        case progress(Int)
-    }
-    private var displayedFrame: DisplayFrame?
+    private let progressFrames = (0..<GlyphFrame.count).map { StatusItemController.templateImage(named: "MenuBar-Progress-\($0)") }
+    private let pausedFrames = (0..<GlyphFrame.count).map { StatusItemController.templateImage(named: "MenuBar-Paused-\($0)") }
+    private var displayedFrame: GlyphFrame?
     private var glyphState = GlyphState.idle
     private var completionTimer: Timer?
 
@@ -96,25 +93,27 @@ final class StatusItemController: NSObject, DownloadStoreObserver {
     }
 
     private func show(_ state: GlyphState) {
-        let frame: DisplayFrame = state == .idle ? .idle : .progress(frameIndex(for: state))
+        let frame = state.frame
         guard frame != displayedFrame else { return }
         displayedFrame = frame
-        switch frame {
-        case .idle:
-            item.button?.image = image
-            NSApp.dockTile.contentView = nil
-            NSApp.dockTile.display()
-        case .progress(let index):
-            item.button?.image = progressFrames[index]
-            showDock(index)
-        }
+        item.button?.image = frame.progress.map { (frame.dimmed ? pausedFrames : progressFrames)[$0] } ?? image
+        showDock(frame)
     }
 
-    private func showDock(_ index: Int) {
-        guard let image = NSImage(named: "DockProgress-\(index)") else { return }
-        let view = NSImageView(image: image)
-        view.imageScaling = .scaleProportionallyUpOrDown
-        NSApp.dockTile.contentView = view
+    /// Without a window OpenDM has no Dock icon, and a new one shows the
+    /// plain app icon until it is given the current progress.
+    func dockIconDidAppear() {
+        if let displayedFrame { showDock(displayedFrame) }
+    }
+
+    private func showDock(_ frame: GlyphFrame) {
+        if let progress = frame.progress, let image = NSImage(named: "\(frame.dimmed ? "DockPaused" : "DockProgress")-\(progress)") {
+            let view = NSImageView(image: image)
+            view.imageScaling = .scaleProportionallyUpOrDown
+            NSApp.dockTile.contentView = view
+        } else {
+            NSApp.dockTile.contentView = nil
+        }
         NSApp.dockTile.display()
     }
 

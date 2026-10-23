@@ -99,8 +99,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSToolba
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// Called when showing the window gives OpenDM its Dock icon.
+    var onDockIcon: (() -> Void)?
+
     func show() {
         NSApp.setActivationPolicy(.regular)
+        onDockIcon?()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
