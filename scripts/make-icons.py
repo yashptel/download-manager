@@ -219,6 +219,11 @@ def main():
     for n in (16, 32, 48):
         tile(n).save(extension / f"icon-{n}.png")
     tile(128, inset=16).save(extension / "icon-128.png")
+    # The toolbar icon's fill when the extension hands a download to the app.
+    (extension / "fill").mkdir(exist_ok=True)
+    for k in range(26):
+        for n in (16, 32):
+            tile(n, lit=k).save(extension / "fill" / f"{k}-{n}.png")
 
     store = ROOT / "store"
     tile(128, inset=16, shadow=True).save(store / "chrome" / "store-icon-128.png")

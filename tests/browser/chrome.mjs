@@ -164,6 +164,10 @@ try {
   const pageTarget = (await targets()).find((t) => t.type === "page");
   const page = await Cdp.open(pageTarget.webSocketDebuggerUrl);
   await page.send("Page.enable");
+  // Records each toolbar icon the extension shows. The worker's extension
+  // bindings need the runtime domain enabled first.
+  await sw.send("Runtime.enable");
+  await sw.evaluate("globalThis.icons = []; const setIcon = chrome.action.setIcon.bind(chrome.action); chrome.action.setIcon = (details) => (icons.push(details.path), setIcon(details)); true");
 
   // 1. A captured download starts OpenDM (not running yet) in the background.
   await page.send("Page.navigate", { url: SITE + "/index.html?auto=zip" });
@@ -174,6 +178,13 @@ try {
   check("engine sends the browser's cookie", engine?.headers.Cookie?.includes("session=abc123"), engine?.headers.Cookie);
   check("engine sends the page as referer", engine?.headers.Referer === SITE + "/index.html?auto=zip", engine?.headers.Referer);
   check("engine sends the browser's user agent", /Chrome\//.test(engine?.headers["User-Agent"] ?? ""), engine?.headers["User-Agent"]);
+  const icons = await until("the toolbar icon fill", 5000, async () => {
+    const shown = await sw.evaluate("icons.map((path) => path[16])");
+    return shown.length === 27 ? shown : undefined;
+  });
+  check("taking the download fills the toolbar icon, then restores it",
+    icons?.[0] === "icons/fill/0-16.png" && icons?.[25] === "icons/fill/25-16.png" && icons?.[26] === "icons/icon-16.png",
+    JSON.stringify(icons ?? (await sw.evaluate("icons.map((path) => path[16])"))));
   const leftover = () => sw.evaluate("chrome.downloads.search({}).then(items => items.map(i => JSON.stringify({ id: i.id, name: i.filename, state: i.state, error: i.error, paused: i.paused })))");
   const dropped = await until("the browser to drop its copy", 5000, async () => (await leftover()).length === 0);
   check("browser dropped its copy", Boolean(dropped), (await leftover()).join(" ") + " lastError=" + (await sw.evaluate("lastError")));

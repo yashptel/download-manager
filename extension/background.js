@@ -178,7 +178,24 @@ async function ask(message, { start = true, timeoutMs = 20_000 } = {}) {
 async function handOver(source, items) {
   const answer = await ask({ type: "download", source, items });
   if (answer.result !== "accepted") throw new Error(answer.reason || "OpenDM declined the download");
+  fillToolbarIcon();
   return true;
+}
+
+// The toolbar icon's chunks fill once when the app takes a download, then
+// the icon goes back to normal. scripts/make-icons.py draws the frames.
+const FILL_FRAMES = 26;
+let fillTimer;
+function fillToolbarIcon() {
+  clearTimeout(fillTimer);
+  const show = (frame) => {
+    const path = frame < FILL_FRAMES
+      ? { 16: `icons/fill/${frame}-16.png`, 32: `icons/fill/${frame}-32.png` }
+      : api.runtime.getManifest().action.default_icon;
+    api.action.setIcon({ path }).catch(() => {});
+    if (frame < FILL_FRAMES) fillTimer = setTimeout(() => show(frame + 1), frame < FILL_FRAMES - 1 ? 24 : 300);
+  };
+  show(0);
 }
 
 // Learn the rules from a running app without starting it.
