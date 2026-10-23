@@ -110,7 +110,7 @@ final class ProgressWindowController: NSWindowController, NSWindowDelegate, Down
         let core = core
         let id = id
         DispatchQueue.global(qos: .utility).async {
-            let details = core.taskDetails(id: id, cells: 120)
+            let details = core.taskDetails(id: id, cells: SegmentBar.cells)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     self.fetching = false
@@ -314,6 +314,9 @@ struct StatusBar: View {
 
 /// The file in equal parts, each filled as far as it is downloaded.
 struct SegmentBar: View {
+    /// How many parts to ask the core for: enough to show where the
+    /// connections are, few enough that each is a chunk the bar's height.
+    static let cells: UInt32 = 30
     let segments: [UInt8]
     @Environment(\.colorScheme) private var colorScheme
 
