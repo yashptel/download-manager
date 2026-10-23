@@ -15,7 +15,7 @@ workflow and dialogs, with native UIs on each platform. OpenDM is a working name
 | `tests/browser/` | Chrome and Firefox tests of the extension, host and app together |
 | `docs/` | Research notes, design decisions, privacy policy and the icon |
 | `site/` | The website, a static Vercel project served at opendm.squiwo.com |
-| `store/` | Browser store listing images |
+| `store/` | Chrome, Edge, Firefox and Microsoft Store listing images and the GitHub banner and social preview; see [store/README.md](store/README.md) |
 
 Website: [opendm.squiwo.com](https://opendm.squiwo.com). Both apps have IDM's
 Download File Info dialog, progress windows, site logins, address refresh and
