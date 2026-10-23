@@ -32,7 +32,8 @@ browser extension. Until the extension is in the stores, load
 
 The icon is drawn by `scripts/make-icons.py` (Python with Pillow), which writes
 `docs/icon.svg`, the Windows app icon, title-bar PNGs and light/dark tray icons,
-and the macOS `.icns`.
+the macOS `.icns`, the extension icons, the site's icon and favicon, and the
+Chrome and Edge store icons.
 
 ## Build the macOS app
 

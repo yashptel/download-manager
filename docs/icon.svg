@@ -1,8 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <polygon points="97.28,12.8 158.72,12.8 158.72,89.6 204.8,89.6 128.0,166.4 51.2,89.6 97.28,89.6" fill="#202020"/>
-  <polygon points="112.64,28.16 143.36,28.16 143.36,104.96 167.72,104.96 128.0,144.68 88.28,104.96 112.64,104.96" fill="#ffffff"/>
-  <rect x="35.84" y="181.76" width="184.32" height="61.44" rx="30.72" fill="#202020"/>
-  <rect x="51.2" y="197.12" width="153.6" height="30.72" rx="15.36" fill="#9a9a9e"/>
-  <rect x="51.2" y="197.12" width="92.16" height="30.72" rx="15.36" fill="#ffffff"/>
-  <rect x="128.0" y="197.12" width="15.36" height="30.72" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14.4" fill="#ffffff"/>
+  <rect x=".5" y=".5" width="63" height="63" rx="13.9" fill="none" stroke="#000" stroke-opacity="0.07"/>
+  <rect x="22.54" y="9.37" width="5.76" height="5.76" rx="1.15" fill="#171717" fill-opacity="0.11"/>
+  <rect x="29.12" y="9.37" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="35.7" y="9.37" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="22.54" y="15.95" width="5.76" height="5.76" rx="1.15" fill="#171717" fill-opacity="0.11"/>
+  <rect x="29.12" y="15.95" width="5.76" height="5.76" rx="1.15" fill="#171717" fill-opacity="0.11"/>
+  <rect x="35.7" y="15.95" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="22.54" y="22.54" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="29.12" y="22.54" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="35.7" y="22.54" width="5.76" height="5.76" rx="1.15" fill="#171717" fill-opacity="0.11"/>
+  <rect x="9.37" y="29.12" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="15.95" y="29.12" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="22.54" y="29.12" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C" fill-opacity="0.22"/>
+  <rect x="29.12" y="29.12" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="35.7" y="29.12" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C" fill-opacity="0.22"/>
+  <rect x="42.29" y="29.12" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="48.87" y="29.12" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="15.95" y="35.7" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="22.54" y="35.7" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="29.12" y="35.7" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="35.7" y="35.7" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C" fill-opacity="0.22"/>
+  <rect x="42.29" y="35.7" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="22.54" y="42.29" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C" fill-opacity="0.22"/>
+  <rect x="29.12" y="42.29" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
+  <rect x="35.7" y="42.29" width="5.76" height="5.76" rx="1.15" fill="#171717" fill-opacity="0.11"/>
+  <rect x="29.12" y="48.87" width="5.76" height="5.76" rx="1.15" fill="#FF5A3C"/>
 </svg>
