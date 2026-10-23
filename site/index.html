@@ -29,6 +29,37 @@
   </div></header>
   <main>
     <div class="hero"><div class="wrap">
+      <div class="hero-mark" aria-hidden="true">
+        <svg viewBox="0 0 64 64" focusable="false">
+          <rect class="hero-mark-tile" width="64" height="64" rx="14.4"/>
+          <rect class="hero-mark-edge" x=".5" y=".5" width="63" height="63" rx="13.9"/>
+          <rect class="chunk" data-index="0" x="22.54" y="9.37" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="1" x="29.12" y="9.37" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="2" x="35.7" y="9.37" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="3" x="22.54" y="15.95" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="4" x="29.12" y="15.95" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="5" x="35.7" y="15.95" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="6" x="22.54" y="22.54" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="7" x="29.12" y="22.54" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="8" x="35.7" y="22.54" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="9" x="9.37" y="29.12" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="10" x="15.95" y="29.12" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="11" x="22.54" y="29.12" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="12" x="29.12" y="29.12" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="13" x="35.7" y="29.12" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="14" x="42.29" y="29.12" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="15" x="48.87" y="29.12" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="16" x="15.95" y="35.7" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="17" x="22.54" y="35.7" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="18" x="29.12" y="35.7" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="19" x="35.7" y="35.7" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="20" x="42.29" y="35.7" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="21" x="22.54" y="42.29" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="22" x="29.12" y="42.29" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="23" x="35.7" y="42.29" width="5.76" height="5.76" rx="1.15"/>
+          <rect class="chunk" data-index="24" x="29.12" y="48.87" width="5.76" height="5.76" rx="1.15"/>
+        </svg>
+      </div>
       <h1>Every download, in pieces, all at once.</h1>
 
       <div class="dl" id="live" aria-label="Example download: Sintel.2010.1080p.mkv, downloading">
@@ -133,14 +164,19 @@
   </div></footer>
   <script>
   // The hero download fills in once, the way the app's progress window does:
-  // eight connections at different speeds, then it lands on Completed.
+  // eight connections at different speeds, then it lands on Completed. The
+  // icon's chunks arrive alongside it in a scattered order.
   (() => {
     const total = 1.18 * 1024, parts = [...document.querySelectorAll("#live .bar i")];
     const stat = document.getElementById("stat"), state = document.getElementById("state"), live = document.getElementById("live");
     const rates = [1.0, 0.72, 0.88, 0.61, 0.95, 0.67, 0.8, 0.74];
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const finish = () => { parts.forEach((p) => p.style.setProperty("--p", 100)); live.classList.add("done"); state.textContent = "Completed"; stat.textContent = "1.18 GB · 48 sec"; };
+    // With reduced motion the stylesheet shows every chunk arrived.
     if (reduce) return finish();
+    const chunks = document.querySelectorAll(".hero-mark .chunk");
+    [10, 1, 19, 6, 23, 13, 4, 21, 0, 16, 8, 24, 3, 14, 20, 5, 18, 2, 22, 9, 12, 7, 15, 11, 17]
+      .forEach((index, step) => setTimeout(() => chunks[index].classList.add("arrived"), 300 + step * 84));
     const start = performance.now() + 500, span = 5200;
     const tick = (now) => {
       const t = Math.min(1, Math.max(0, (now - start) / span));
