@@ -18,6 +18,11 @@ public sealed partial class ProgressWindow : Window
     private const double ClientWidth = 460;
     /// <summary>More downloads than this started at once (a page of links) get no windows.</summary>
     private const int MaxAtOnce = 3;
+    /// <summary>
+    /// Parts of the file in the segment map: enough to show where the
+    /// connections are, few enough that each is a chunk the map's height.
+    /// </summary>
+    private const int SegmentCells = 30;
     private const string DetailsKey = @"Software\OpenDM";
     private static readonly Dictionary<string, ProgressWindow> Open = new();
 
@@ -172,7 +177,7 @@ public sealed partial class ProgressWindow : Window
     {
         if (fetching || closed || row is null || (row.Status != TaskStatus.Downloading && details is not null)) return;
         fetching = true;
-        Task.Run(() => core.TaskDetails(id, 120)).ContinueWith(task => DispatcherQueue.TryEnqueue(() =>
+        Task.Run(() => core.TaskDetails(id, SegmentCells)).ContinueWith(task => DispatcherQueue.TryEnqueue(() =>
         {
             fetching = false;
             if (closed || !task.IsCompletedSuccessfully) return;

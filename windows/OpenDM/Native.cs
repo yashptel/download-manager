@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 
 namespace OpenDM;
 
@@ -29,14 +30,16 @@ internal static class Shell
     }
 }
 
-internal static class Native
+internal static partial class Native
 {
     private static readonly Guid DownloadsFolderId = new("374DE290-123F-4565-9164-39C4925E467B");
     private static readonly ITaskbarList3? Taskbar = CreateTaskbar();
 
-    internal enum TaskbarProgressState : uint
+    /// <summary>TBPFLAG: how the taskbar button shows progress.</summary>
+    internal enum TaskbarProgress : uint
     {
-        NoProgress = 0,
+        None = 0,
+        Indeterminate = 1,
         Normal = 2,
         Paused = 8,
     }
@@ -110,47 +113,49 @@ internal static class Native
         FlashWindowEx(ref info);
     }
 
-    public static void SetTaskbarProgress(IntPtr window, TaskbarProgressState state, double fraction = 0)
+    /// <summary>Shows progress on the window's taskbar button; a null fraction leaves the value as it was.</summary>
+    public static void SetTaskbarProgress(IntPtr window, TaskbarProgress state, double? fraction = null)
     {
         if (window == IntPtr.Zero || Taskbar is null) return;
-        if (Taskbar.SetProgressState(window, state) < 0) return;
-        if (state == TaskbarProgressState.Normal)
+        if (Taskbar.SetProgressState(window, state) < 0 || fraction is not { } value) return;
+        Taskbar.SetProgressValue(window, (ulong)Math.Round(Math.Clamp(value, 0, 1) * 1000), 1000);
+    }
+
+    // Native AOT has no built-in COM interop, so the interface goes through
+    // the source-generated ComWrappers.
+    private static ITaskbarList3? CreateTaskbar()
+    {
+        var classId = new Guid("56FDF344-FD6D-11D0-958A-006097C9A090"); // CLSID_TaskbarList
+        var interfaceId = typeof(ITaskbarList3).GUID;
+        if (CoCreateInstance(classId, IntPtr.Zero, 1, interfaceId, out var pointer) < 0) return null;
+        try
         {
-            var completed = (ulong)Math.Round(Math.Clamp(fraction, 0, 1) * 1000);
-            Taskbar.SetProgressValue(window, completed, 1000);
+            var taskbar = (ITaskbarList3)new StrategyBasedComWrappers().GetOrCreateObjectForComInstance(pointer, CreateObjectFlags.None);
+            return taskbar.HrInit() >= 0 ? taskbar : null;
+        }
+        finally
+        {
+            Marshal.Release(pointer);
         }
     }
 
-    private static ITaskbarList3? CreateTaskbar()
-    {
-        var classId = new Guid("56FDF344-FD6D-11D0-958A-006097C9A090");
-        var interfaceId = new Guid("EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF");
-        return CoCreateInstance(ref classId, IntPtr.Zero, 1, ref interfaceId, out ITaskbarList3 taskbar) >= 0
-            && taskbar.HrInit() >= 0 ? taskbar : null;
-    }
-
-    [ComImport]
+    // ITaskbarList, ITaskbarList2 and ITaskbarList3 in vtable order, up to the methods used.
+    [GeneratedComInterface]
     [Guid("EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface ITaskbarList3
+    internal partial interface ITaskbarList3
     {
         [PreserveSig] int HrInit();
         [PreserveSig] int AddTab(IntPtr window);
         [PreserveSig] int DeleteTab(IntPtr window);
         [PreserveSig] int ActivateTab(IntPtr window);
         [PreserveSig] int SetActiveAlt(IntPtr window);
-        [PreserveSig] int MarkFullscreenWindow(IntPtr window, [MarshalAs(UnmanagedType.Bool)] bool fullscreen);
+        [PreserveSig] int MarkFullscreenWindow(IntPtr window, int fullscreen);
         [PreserveSig] int SetProgressValue(IntPtr window, ulong completed, ulong total);
-        [PreserveSig] int SetProgressState(IntPtr window, TaskbarProgressState state);
+        [PreserveSig] int SetProgressState(IntPtr window, TaskbarProgress state);
     }
 
-    [DllImport("ole32.dll")]
-    private static extern int CoCreateInstance(
-        ref Guid classId,
-        IntPtr outer,
-        uint context,
-        ref Guid interfaceId,
-        out ITaskbarList3 taskbar);
+    [LibraryImport("ole32.dll")]
+    private static partial int CoCreateInstance(in Guid classId, IntPtr outer, uint context, in Guid interfaceId, out IntPtr instance);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FlashInfo

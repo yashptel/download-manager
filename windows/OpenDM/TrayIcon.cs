@@ -1,10 +1,12 @@
 using H.NotifyIcon;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.Win32;
 using Windows.UI.ViewManagement;
+using WinRT.Interop;
 
 namespace OpenDM;
 
@@ -17,22 +19,24 @@ namespace OpenDM;
 internal sealed partial class TrayIcon : IDisposable
 {
     private readonly TaskbarIcon icon;
-    private readonly Func<IntPtr> mainWindowHandle;
+    private readonly IntPtr mainWindow;
     private readonly UISettings settings = new();
     private readonly MenuFlyoutItem statusItem = new() { IsEnabled = false };
     private readonly MenuFlyoutItem resumeAllItem;
     private readonly MenuFlyoutItem pauseAllItem;
     private readonly BitmapImage lightImage = Asset("Tray-light.ico");
     private readonly BitmapImage darkImage = Asset("Tray-dark.ico");
-    private readonly BitmapImage[] lightProgress = Enumerable.Range(0, 26).Select(k => Asset($"Tray-light-progress-{k}.ico")).ToArray();
-    private readonly BitmapImage[] darkProgress = Enumerable.Range(0, 26).Select(k => Asset($"Tray-dark-progress-{k}.ico")).ToArray();
+    private readonly BitmapImage[] lightProgress = Frames("Tray-light-progress");
+    private readonly BitmapImage[] darkProgress = Frames("Tray-dark-progress");
+    private readonly BitmapImage[] lightPaused = Frames("Tray-light-paused");
+    private readonly BitmapImage[] darkPaused = Frames("Tray-dark-paused");
     private readonly DispatcherQueueTimer completionHold;
     private bool? lightTaskbar;
     private GlyphState glyphState = new GlyphState.Idle();
 
-    public TrayIcon(DownloadStore store, DownloadCore core, Func<IntPtr> mainWindowHandle, Action showWindow, Action newDownload, Action quit)
+    public TrayIcon(DownloadStore store, DownloadCore core, MainWindow window, Action showWindow, Action newDownload, Action quit)
     {
-        this.mainWindowHandle = mainWindowHandle;
+        mainWindow = WindowNative.GetWindowHandle(window);
         var show = Command(showWindow);
         resumeAllItem = new MenuFlyoutItem { Text = "Resume all", Command = Command(core.ResumeAll) };
         pauseAllItem = new MenuFlyoutItem { Text = "Pause all", Command = Command(core.PauseAll) };
@@ -69,6 +73,12 @@ internal sealed partial class TrayIcon : IDisposable
         icon.ForceCreate(enablesEfficiencyMode: false);
         var dispatcher = DispatcherQueue.GetForCurrentThread();
         settings.ColorValuesChanged += (_, _) => dispatcher.TryEnqueue(FollowTaskbarTheme);
+        // Hiding the window removes its taskbar button, and the progress with it.
+        window.AppWindow.Changed += (sender, args) =>
+        {
+            if (args.DidVisibilityChange && sender.IsVisible)
+                dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () => UpdateTaskbar(glyphState));
+        };
 
         store.StatusChanged += () => Update(store);
         store.RowsChanged += changes => Update(store, changes.Any(change =>
@@ -116,11 +126,10 @@ internal sealed partial class TrayIcon : IDisposable
     private void ShowIcon()
     {
         var light = lightTaskbar == true;
-        var image = glyphState switch
-        {
-            GlyphState.Idle => light ? lightImage : darkImage,
-            _ => (light ? lightProgress : darkProgress)[GlyphState.FrameIndex(glyphState)],
-        };
+        var frames = glyphState is GlyphState.Paused
+            ? light ? lightPaused : darkPaused
+            : light ? lightProgress : darkProgress;
+        var image = glyphState.Frame is { } frame ? frames[frame] : light ? lightImage : darkImage;
         if (icon.IconSource != image) icon.IconSource = image;
     }
 
@@ -153,21 +162,18 @@ internal sealed partial class TrayIcon : IDisposable
 
     private void UpdateTaskbar(GlyphState state)
     {
-        var window = mainWindowHandle();
-        if (window == IntPtr.Zero) return;
-        switch (state)
+        var (progress, fraction) = state switch
         {
-            case GlyphState.Downloading downloading:
-                Native.SetTaskbarProgress(window, Native.TaskbarProgressState.Normal, downloading.Fraction);
-                break;
-            case GlyphState.Paused:
-                Native.SetTaskbarProgress(window, Native.TaskbarProgressState.Paused);
-                break;
-            default:
-                Native.SetTaskbarProgress(window, Native.TaskbarProgressState.NoProgress);
-                break;
-        }
+            GlyphState.Downloading { Fraction: null } => (Native.TaskbarProgress.Indeterminate, null),
+            GlyphState.Downloading downloading => (Native.TaskbarProgress.Normal, downloading.Fraction),
+            GlyphState.Paused paused => (Native.TaskbarProgress.Paused, paused.Fraction),
+            _ => (Native.TaskbarProgress.None, (double?)null),
+        };
+        Native.SetTaskbarProgress(mainWindow, progress, fraction);
     }
+
+    private static BitmapImage[] Frames(string name) =>
+        Enumerable.Range(0, GlyphState.Frames).Select(k => Asset($"{name}-{k}.ico")).ToArray();
 
     private static BitmapImage Asset(string file) =>
         new(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", file)));

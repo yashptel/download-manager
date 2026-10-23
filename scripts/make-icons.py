@@ -43,6 +43,7 @@ CELLS = [(x, y, ch) for y, row in enumerate(ARROW) for x, ch in enumerate(row) i
 TILE_COLORS = {"#": (CORAL, 1), "o": (PENDING, PENDING_ALPHA), "+": (CORAL, TINT_ALPHA)}
 GAP = 1 / 8  # space between blocks, as a share of the cell pitch
 BLOCK_RADIUS = 0.2  # block corner radius, as a share of the block's side
+PAUSED = 0.5  # a paused download's blocks, as a share of their usual opacity
 ROW_ORDER = sorted(((x, y) for x, y, _ in CELLS), key=lambda cell: (cell[1], cell[0]))
 
 
@@ -81,7 +82,7 @@ def blocks(draw, x0, y0, width, colors, snap, scale=1, lit=None):
     Without gaps every block is drawn like a finished one: faint pixels
     butted against solid ones read as noise, not as chunks. With lit, a
     progress frame: the first lit cells in fill order are solid and every
-    other cell is faint, so frame 0 is the paused look."""
+    other cell is faint."""
     pitch = width / 7
     if snap:
         pitch = max(1, int(pitch))
@@ -106,7 +107,12 @@ def blocks(draw, x0, y0, width, colors, snap, scale=1, lit=None):
         draw.rounded_rectangle(box, radius=radius * scale, fill=rgba(*colors[ch]))
 
 
-def tile(size, inset=0, shadow=False, lit=None):
+def dimmed(colors, paused):
+    """colors with every alpha lowered when the download is paused."""
+    return {ch: (color, alpha * PAUSED) for ch, (color, alpha) in colors.items()} if paused else colors
+
+
+def tile(size, inset=0, shadow=False, lit=None, paused=False):
     """The tile with its arrow, on a transparent square of the given size.
     inset is the transparent margin on each side, in pixels."""
     side = size - 2 * inset
@@ -135,25 +141,27 @@ def tile(size, inset=0, shadow=False, lit=None):
     layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     width = side * MARK
     start = inset + (side - width) / 2
-    blocks(ImageDraw.Draw(layer), start, start, width, TILE_COLORS, snap=size <= 64, scale=ss, lit=lit)
+    blocks(ImageDraw.Draw(layer), start, start, width, dimmed(TILE_COLORS, paused), snap=size <= 64, scale=ss, lit=lit)
     canvas.alpha_composite(layer)
     return canvas.reduce(ss)
 
 
-def tray_icon(size, color, lit=None):
+def tray_icon(size, color, lit=None, paused=False):
     """The arrow alone in one color, like the system's tray icons."""
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    blocks(ImageDraw.Draw(image), 0, 0, size, {"#": (color, 1), "o": (color, 0.4), "+": (color, 0.4)}, snap=True, lit=lit)
+    colors = dimmed({"#": (color, 1), "o": (color, 0.4), "+": (color, 0.4)}, paused)
+    blocks(ImageDraw.Draw(image), 0, 0, size, colors, snap=True, lit=lit)
     return image
 
 
-def menu_bar_icon(scale, lit=None):
+def menu_bar_icon(scale, lit=None, paused=False):
     """The arrow for the macOS menu bar, 14 points on an 18-point canvas, in
     black: macOS tints a template image to match the menu bar."""
     side, mark = 18 * scale, 14 * scale
     image = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     inset = (side - mark) // 2
-    blocks(ImageDraw.Draw(image), inset, inset, mark, {"#": ("#000000", 1), "o": ("#000000", 0.4), "+": ("#000000", 0.4)}, snap=True, lit=lit)
+    colors = dimmed({"#": ("#000000", 1), "o": ("#000000", 0.4), "+": ("#000000", 0.4)}, paused)
+    blocks(ImageDraw.Draw(image), inset, inset, mark, colors, snap=True, lit=lit)
     return image
 
 
@@ -162,9 +170,9 @@ def mac_icon(size):
     return tile(size, inset=round(size * 100 / 1024), shadow=True)
 
 
-def mac_progress_icon(size, lit):
+def mac_progress_icon(size, lit, paused=False):
     """The Dock tile with the same progress glyph as the small icons."""
-    return tile(size, inset=round(size * 100 / 1024), shadow=True, lit=lit)
+    return tile(size, inset=round(size * 100 / 1024), shadow=True, lit=lit, paused=paused)
 
 
 def svg():
@@ -203,6 +211,8 @@ def main():
     for k in range(26):
         save_ico(windows / f"Tray-light-progress-{k}.ico", [tray_icon(n, "#1c1c1c", k) for n in tray])
         save_ico(windows / f"Tray-dark-progress-{k}.ico", [tray_icon(n, "#ffffff", k) for n in tray])
+        save_ico(windows / f"Tray-light-paused-{k}.ico", [tray_icon(n, "#1c1c1c", k, paused=True) for n in tray])
+        save_ico(windows / f"Tray-dark-paused-{k}.ico", [tray_icon(n, "#ffffff", k, paused=True) for n in tray])
 
     mac = [mac_icon(n) for n in (16, 32, 64, 128, 256, 512, 1024)]
     mac[-1].save(ROOT / "apple" / "AppIcon.icns", append_images=mac[:-1])
@@ -211,7 +221,10 @@ def main():
     for k in range(26):
         menu_bar_icon(1, k).save(ROOT / "apple" / f"MenuBar-Progress-{k}.png")
         menu_bar_icon(2, k).save(ROOT / "apple" / f"MenuBar-Progress-{k}@2x.png")
+        menu_bar_icon(1, k, paused=True).save(ROOT / "apple" / f"MenuBar-Paused-{k}.png")
+        menu_bar_icon(2, k, paused=True).save(ROOT / "apple" / f"MenuBar-Paused-{k}@2x.png")
         mac_progress_icon(256, k).save(ROOT / "apple" / f"DockProgress-{k}.png")
+        mac_progress_icon(256, k, paused=True).save(ROOT / "apple" / f"DockPaused-{k}.png")
 
     # Chrome asks for 96 px of art with 16 px of padding in the 128 px icon.
     extension = ROOT / "extension" / "icons"

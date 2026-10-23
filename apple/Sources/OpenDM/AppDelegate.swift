@@ -57,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         mainWindow = MainWindowController(store: store, core: core)
         statusItem = StatusItemController(store: store)
+        mainWindow?.onDockIcon = { [weak self] in self?.statusItem?.dockIconDidAppear() }
         core.start()
         Self.installBrowserHost(core)
         // At launch, then daily, unless turned off in Settings.
