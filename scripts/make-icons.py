@@ -45,19 +45,40 @@ GAP = 1 / 8  # space between blocks, as a share of the cell pitch
 BLOCK_RADIUS = 0.2  # block corner radius, as a share of the block's side
 
 
+def pattern():
+    """The arrow's chunks extended over the whole grid: cells outside the
+    arrow get seeded random chunks at the arrow's density, so the animation
+    scrolling the pattern down through the arrow shows more of the same."""
+    seed = 23
+
+    def rand():
+        nonlocal seed
+        seed = seed * 16807 % 2147483647
+        return seed / 2147483647
+
+    lit = sum(ch == "#" for _, _, ch in CELLS) / len(CELLS)
+    return [[rand() < lit if ch == "." else ch == "#" for ch in row] for row in ARROW]
+
+
+PATTERN = pattern()
+
+
 def rgba(hex_color, alpha=1.0):
     h = hex_color.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) + (round(255 * alpha),)
 
 
-def blocks(draw, x0, y0, width, colors, snap, scale=1):
+def blocks(draw, x0, y0, width, colors, snap, scale=1, step=None):
     """The arrow's blocks in a square of the given width at (x0, y0), in
     pixels of the final image; scale is how much larger draw's canvas is.
     colors maps each chunk character in ARROW to a (color, alpha) pair.
     With snap the pitch is a whole number of pixels and the arrow is centred
     on whole pixels, and the gaps close up when blocks would be under 3 px.
     Without gaps every block is drawn like a finished one: faint pixels
-    butted against solid ones read as noise, not as chunks."""
+    butted against solid ones read as noise, not as chunks.
+    With a step, the frame of the downloading animation: PATTERN moved down
+    that many rows decides which blocks are finished, and the gaps never
+    close up so the motion shows even at the smallest size."""
     pitch = width / 7
     if snap:
         pitch = max(1, int(pitch))
@@ -65,7 +86,7 @@ def blocks(draw, x0, y0, width, colors, snap, scale=1):
         y0 = round(y0 + (width - 7 * pitch) / 2)
         gap = 0 if pitch <= 2 else max(1, round(pitch * GAP))
         radius = 0 if pitch - gap < 4 else 1
-        if gap == 0:
+        if gap == 0 and step is None:
             colors = {ch: colors["#"] for ch in colors}
     else:
         gap = pitch * GAP
@@ -73,6 +94,8 @@ def blocks(draw, x0, y0, width, colors, snap, scale=1):
         x0, y0 = x0 + gap / 2, y0 + gap / 2
     side = pitch - gap
     for x, y, ch in CELLS:
+        if step is not None:
+            ch = "#" if PATTERN[(y - step) % 7][x] else "o"
         left, top = x0 + x * pitch, y0 + y * pitch
         box = [left * scale, top * scale, (left + side) * scale - 1, (top + side) * scale - 1]
         draw.rounded_rectangle(box, radius=radius * scale, fill=rgba(*colors[ch]))
@@ -112,20 +135,20 @@ def tile(size, inset=0, shadow=False):
     return canvas.reduce(ss)
 
 
-def tray_icon(size, color):
+def tray_icon(size, color, step=None):
     """The arrow alone in one color, like the system's tray icons."""
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    blocks(ImageDraw.Draw(image), 0, 0, size, {"#": (color, 1), "o": (color, 0.4), "+": (color, 0.4)}, snap=True)
+    blocks(ImageDraw.Draw(image), 0, 0, size, {"#": (color, 1), "o": (color, 0.4), "+": (color, 0.4)}, snap=True, step=step)
     return image
 
 
-def menu_bar_icon(scale):
+def menu_bar_icon(scale, step=None):
     """The arrow for the macOS menu bar, 14 points on an 18-point canvas, in
     black: macOS tints a template image to match the menu bar."""
     side, mark = 18 * scale, 14 * scale
     image = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     inset = (side - mark) // 2
-    blocks(ImageDraw.Draw(image), inset, inset, mark, {"#": ("#000000", 1), "o": ("#000000", 0.4), "+": ("#000000", 0.4)}, snap=True)
+    blocks(ImageDraw.Draw(image), inset, inset, mark, {"#": ("#000000", 1), "o": ("#000000", 0.4), "+": ("#000000", 0.4)}, snap=True, step=step)
     return image
 
 
@@ -167,11 +190,17 @@ def main():
     tray = (16, 20, 24, 32, 40, 48)
     save_ico(windows / "Tray-light.ico", [tray_icon(n, "#1c1c1c") for n in tray])  # for light taskbars
     save_ico(windows / "Tray-dark.ico", [tray_icon(n, "#ffffff") for n in tray])   # for dark taskbars
+    for k in range(7):
+        save_ico(windows / f"Tray-light-downloading-{k}.ico", [tray_icon(n, "#1c1c1c", k) for n in tray])
+        save_ico(windows / f"Tray-dark-downloading-{k}.ico", [tray_icon(n, "#ffffff", k) for n in tray])
 
     mac = [mac_icon(n) for n in (16, 32, 64, 128, 256, 512, 1024)]
     mac[-1].save(ROOT / "apple" / "AppIcon.icns", append_images=mac[:-1])
     menu_bar_icon(1).save(ROOT / "apple" / "MenuBar.png")
     menu_bar_icon(2).save(ROOT / "apple" / "MenuBar@2x.png")
+    for k in range(7):
+        menu_bar_icon(1, k).save(ROOT / "apple" / f"MenuBar-Downloading-{k}.png")
+        menu_bar_icon(2, k).save(ROOT / "apple" / f"MenuBar-Downloading-{k}@2x.png")
 
     # Chrome asks for 96 px of art with 16 px of padding in the 128 px icon.
     extension = ROOT / "extension" / "icons"
