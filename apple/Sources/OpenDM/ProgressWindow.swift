@@ -237,7 +237,7 @@ struct DownloadProgressView: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let segments = model.details?.segments, !segments.isEmpty {
-                SegmentBar(segments: [UInt8](segments), color: Color(nsColor: model.row.map { StatusLook.of($0).color } ?? .controlAccentColor))
+                SegmentBar(segments: [UInt8](segments))
                     .frame(height: 12)
                     .accessibilityLabel("Finished parts of the file")
                     .help("Finished parts of the file. Each connection fills its own part.")
@@ -315,18 +315,25 @@ struct StatusBar: View {
 /// The file in equal parts, each filled as far as it is downloaded.
 struct SegmentBar: View {
     let segments: [UInt8]
-    /// The progress bar's color, so a paused download's parts turn with it.
-    let color: Color
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Canvas { context, size in
-            let width = size.width / CGFloat(segments.count)
-            context.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 3), with: .color(.secondary.opacity(0.15)))
-            for (index, done) in segments.enumerated() where done > 0 {
-                let rect = CGRect(x: CGFloat(index) * width, y: 0, width: width + 0.5, height: size.height)
-                context.fill(Path(rect), with: .color(color.opacity(0.25 + 0.75 * Double(done) / 100)))
+            guard !segments.isEmpty, size.width > 0, size.height > 0 else { return }
+            let pitch = size.width / CGFloat(segments.count)
+            let gap = pitch / 8
+            let side = min(size.height, pitch - gap)
+            let y = (size.height - side) / 2
+            let coral = Color(red: 1, green: 90.0 / 255, blue: 60.0 / 255)
+            let missing = colorScheme == .dark
+                ? Color.white.opacity(0.14)
+                : Color(red: 23.0 / 255, green: 23.0 / 255, blue: 23.0 / 255).opacity(0.11)
+            for (index, done) in segments.enumerated() {
+                let x = CGFloat(index) * pitch + (pitch - side) / 2
+                let rect = CGRect(x: x, y: y, width: side, height: side)
+                let color = done >= 100 ? coral : done > 0 ? coral.opacity(0.22) : missing
+                context.fill(Path(roundedRect: rect, cornerRadius: side * 0.2), with: .color(color))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 3))
     }
 }

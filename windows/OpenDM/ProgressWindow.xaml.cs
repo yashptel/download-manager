@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Microsoft.Win32;
+using Windows.UI;
 
 namespace OpenDM;
 
@@ -58,6 +59,10 @@ public sealed partial class ProgressWindow : Window
         this.store = store;
         this.core = core;
         InitializeComponent();
+        Root.ActualThemeChanged += (_, _) =>
+        {
+            if (details is not null) UpdateCells(details.Segments);
+        };
         ToolWindows.Setup(this, ClientWidth, minimizable: true);
         ToolWindows.Keys(this, enter: () => Primary_Click(this, new RoutedEventArgs()), escape: () =>
         {
@@ -191,30 +196,54 @@ public sealed partial class ProgressWindow : Window
                 for (var i = 0; i < segments.Length; i++)
                 {
                     SegmentMap.ColumnDefinitions.Add(new ColumnDefinition());
-                    var cell = new Rectangle();
+                    var cell = new Rectangle
+                    {
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
                     Grid.SetColumn(cell, i);
                     SegmentMap.Children.Add(cell);
                     cells.Add(cell);
                 }
             }
-            // The progress bar's color, so a paused download's parts turn with it.
-            var fill = (row is null ? (TaskStatus?)null : Format.Shown(row)) switch
-            {
-                TaskStatus.Paused or TaskStatus.Queued => Brush("SystemFillColorCautionBrush"),
-                TaskStatus.Failed => Brush("SystemFillColorCriticalBrush"),
-                _ => Brush("AccentFillColorDefaultBrush"),
-            };
-            for (var i = 0; i < segments.Length; i++)
-            {
-                cells[i].Fill = fill;
-                cells[i].Opacity = segments[i] == 0 ? 0 : 0.25 + 0.75 * segments[i] / 100.0;
-            }
+            UpdateCells(segments);
         }
         // The engine reports the servers in use, not each connection.
         var hosts = details.Connections.Select(connection => connection.Host).Distinct().Order().ToList();
         ServersText.Text = hosts.Count == 0 ? "" : (hosts.Count == 1 ? "Server: " : "Servers: ") + string.Join(", ", hosts);
         ServersText.Visibility = hosts.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (hadMap != (segments.Length > 0) && DetailsExpander.IsExpanded) Refit();
+    }
+
+    private void SegmentMap_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (details is not null) UpdateCells(details.Segments);
+    }
+
+    private void UpdateCells(IReadOnlyList<byte> segments)
+    {
+        if (segments.Count == 0 || SegmentMap.ActualWidth <= 0 || SegmentMap.ActualHeight <= 0) return;
+        var pitch = SegmentMap.ActualWidth / segments.Count;
+        var gap = pitch / 8;
+        var side = Math.Min(SegmentMap.ActualHeight, pitch - gap);
+        if (side <= 0) return;
+
+        SegmentMap.Padding = new Thickness(gap / 2, 0, gap / 2, 0);
+        SegmentMap.ColumnSpacing = gap;
+        var finished = new SolidColorBrush(Color.FromArgb(255, 255, 90, 60));
+        var downloading = new SolidColorBrush(Color.FromArgb(56, 255, 90, 60));
+        var missing = new SolidColorBrush(Root.ActualTheme == ElementTheme.Dark
+            ? Color.FromArgb(36, 255, 255, 255)
+            : Color.FromArgb(28, 23, 23, 23));
+        for (var i = 0; i < segments.Count; i++)
+        {
+            cells[i].Width = side;
+            cells[i].Height = side;
+            cells[i].RadiusX = side * 0.2;
+            cells[i].RadiusY = side * 0.2;
+            cells[i].Fill = segments[i] >= 100 ? finished : segments[i] > 0 ? downloading : missing;
+            cells[i].Opacity = 1;
+        }
     }
 
     private void Refit() => DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => ToolWindows.Fit(this, ClientWidth));
