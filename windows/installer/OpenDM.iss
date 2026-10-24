@@ -40,6 +40,10 @@ OutputBaseFilename=OpenDM-{#AppVersion}-{#Arch}-setup
 SetupIconFile=..\OpenDM\Assets\OpenDM.ico
 UninstallDisplayIcon={app}\OpenDM.exe
 UninstallDisplayName=OpenDM
+; Explorer caches icons by file path, so an upgrade that changes the icon
+; keeps showing the old one on the Start menu and taskbar. This makes setup
+; tell Explorer to refresh its icons when it finishes.
+ChangesAssociations=yes
 WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
