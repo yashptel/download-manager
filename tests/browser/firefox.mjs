@@ -126,9 +126,11 @@ try {
   await new Promise((r) => setTimeout(r, 1500));
   const requests = fs.readFileSync(ROOT + "/requests.log", "utf8").trim().split("\n").map(JSON.parse).filter((r) => r.at > started && r.path === "/files/report.zip");
   const engine = requests.find((r) => !r.headers["Sec-Fetch-Dest"]);
+  const browser = requests.findLast((r) => r.headers["Sec-Fetch-Dest"] || r.headers["sec-fetch-dest"]);
   check("OpenDM saved the Firefox download", Boolean(saved), saved);
   check("the file is complete", Boolean(saved) && fs.statSync(APP_DL + "/" + saved).size === 6291456);
   check("the engine sent Firefox's user agent", /Firefox\//.test(engine?.headers["User-Agent"] ?? ""), engine?.headers["User-Agent"]);
+  check("the engine sent Firefox's language", Boolean(browser?.headers["Accept-Language"]) && engine?.headers["Accept-Language"] === browser?.headers["Accept-Language"], engine?.headers["Accept-Language"]);
   check("the engine sent the cookie", Boolean(engine?.headers.Cookie?.includes("session=abc123")), engine?.headers.Cookie);
   check("the engine sent the referer", Boolean(engine?.headers.Referer?.includes("auto=zip")), engine?.headers.Referer);
   check("Firefox kept no copy", files(BROWSER_DL).length === 0, files(BROWSER_DL).join(", "));

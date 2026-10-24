@@ -239,11 +239,14 @@ async function cookieFor(url, headers, storeId) {
 /** What the app needs to repeat a request the browser made or would make. */
 async function requestItem(url, { referrer = "", headers, storeId } = {}) {
   const seen = headers ?? requests.get(url)?.headers;
+  // Some hosts sign media URLs against the browser's language as well as its user agent.
+  const language = header(seen, "accept-language");
   return {
     url,
     referrer: header(seen, "referer") || referrer,
     cookie: await cookieFor(url, seen, storeId),
     userAgent: header(seen, "user-agent") || navigator.userAgent,
+    headers: language ? [{ name: "Accept-Language", value: language }] : [],
     proxy: requests.get(url)?.proxy ?? (await extensionProxy(url)),
   };
 }
@@ -700,7 +703,7 @@ async function mediaItem(tab, entry) {
   const item = await requestItem(url, { referrer: tab?.url ?? "", headers: seen, storeId: tab?.cookieStoreId });
   const headers = entry.site
     ? seen
-    : seen.filter((h) => ["origin", "authorization"].includes(h.name.toLowerCase()) || /^x-/i.test(h.name));
+    : seen.filter((h) => ["origin", "authorization", "accept-language"].includes(h.name.toLowerCase()) || /^x-/i.test(h.name));
   const kind = mediaKindOf(entry);
   const filename = titleName(entry.site?.title || tab?.title, kind ? undefined : entry.kind.toLowerCase());
   const media =
