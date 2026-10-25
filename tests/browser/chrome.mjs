@@ -175,9 +175,11 @@ try {
   check("captured download is saved by OpenDM", Boolean(saved), saved);
   if (saved) check("file is complete", fs.statSync(APP_DL + "/" + saved).size === 6291456);
   const engine = engineRequests("/files/report.zip").at(-1);
+  const browser = serverRequests("/files/report.zip").findLast((r) => r.headers["Sec-Fetch-Dest"] || r.headers["sec-fetch-dest"]);
   check("engine sends the browser's cookie", engine?.headers.Cookie?.includes("session=abc123"), engine?.headers.Cookie);
   check("engine sends the page as referer", engine?.headers.Referer === SITE + "/index.html?auto=zip", engine?.headers.Referer);
   check("engine sends the browser's user agent", /Chrome\//.test(engine?.headers["User-Agent"] ?? ""), engine?.headers["User-Agent"]);
+  check("engine sends the browser's language", Boolean(browser?.headers["Accept-Language"]) && engine?.headers["Accept-Language"] === browser?.headers["Accept-Language"], engine?.headers["Accept-Language"]);
   const icons = await until("the toolbar icon fill", 5000, async () => {
     const shown = await sw.evaluate("icons.map((path) => path[16])");
     return shown.length === 27 ? shown : undefined;
